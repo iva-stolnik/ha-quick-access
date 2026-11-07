@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile snapshot benchmark</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 1rem auto; padding: 0 1rem; max-width: 64rem; }
+  input { width: 5rem; }
+  button, input { font: inherit; margin: .5rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>Profile snapshot benchmark</h1>
+<p>Runs the real profile validator, including its deep clone. Keep this tab visible.
+  Fixtures and fetching are excluded from timing. No Home Assistant connection is used.</p>
+<p>Each case measures one subscription event, then an event plus save acknowledgement
+  (the saving tab's two messages, delivered in separate tasks). Results include JSON decoding,
+  validation plus cloning, their synchronous total, and the interval to the next animation frame.</p>
+<label>Measured rounds <input id="rounds" type="number" min="1" max="100" value="10" required></label>
+<button id="run" disabled>Run benchmark</button>
+<button id="download" disabled>Download JSON</button>
+<p id="status" role="status">Loading modules…</p>
+<pre id="output"></pre>
+<script type="module">
+  import { createProfileValidation } from "/quick_access/profiles/profile-validation.js";
+
+  const WARMUP_ROUNDS = 2;
+  const LONG_TASK_MS = 50;
+  const { validateProfileData } = createProfileValidation({ message: (key) => key, error: (message) => new Error(message) });
+  const run = document.querySelector("#run");
+  const download = document.querySelector("#download");
+  const roundsInput = document.querySelector("#rounds");
+  const status = document.querySelector("#status");
+  const output = document.querySelector("#output");
+  const frame = () => new Promise(requestAnimationFrame);
+  let report;
+  // Keep the previous confirmed clone alive while processing its replacement,
+  // as the controller does; release it between fixtures and after the run.
+  let latestSnapshot;
+
+  function summary(samples) {
+    const sorted = [...samples].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return { median: sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2,
+      p95: sorted[Math.ceil(sorted.length * .95) - 1], max: sorted.at(-1) };
+  }
+
+  async function measureMessage(text, field) {
+    // A frame before each message lets the browser paint between tasks and
+    // avoids counting fixture setup in the measured animation-frame interval.
+    await frame();
+    if (document.hidden) throw new Error("Tab became hidden; keep it visible and rerun.");
+    const start = performance.now();
+    const decoded = JSON.parse(text)[field];
+    const parsed = performance.now();
+    latestSnapshot = validateProfileData(decoded);
+    const validated = performance.now();
+    await frame();
+    if (document.hidden) throw new Error("Tab became hidden; keep it visible and rerun.");
+    return { decode_ms: parsed - start, validate_clone_ms: validated - parsed,
+      sync_ms: validated - start, next_frame_ms: performance.now() - start };
+  }
+
+  async function measureCase(fixture, mode, rounds, event, result) {
+    const samples = [];
+    for (let round = 0; round < WARMUP_ROUNDS + rounds; round++) {
+      const messages = [await measureMessage(event, "event")];
+      if (mode === "event_and_ack") messages.push(await measureMessage(result, "result"));
+      if (round >= WARMUP_ROUNDS) samples.push(messages);
+    }
+    const messages = samples.flat();
+    return { ...fixture, mode, rounds, messages_per_round: samples[0].length,
+      // Distributions describe individual synchronous message tasks. The round
+      // total below sums work, not wall time across frame/scheduling boundaries.
+      per_message: Object.fromEntries(Object.keys(messages[0]).map((key) => [key, summary(messages.map((sample) => sample[key]))])),
+      total_sync_ms_per_round: summary(samples.map((round) => round.reduce((sum, message) => sum + message.sync_ms, 0))),
+      messages_at_least_50_ms: messages.filter((message) => message.sync_ms >= LONG_TASK_MS).length,
+      samples };
+  }
+
+  run.addEventListener("click", async () => {
+    const rounds = Number(roundsInput.value);
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 100) { roundsInput.reportValidity(); return; }
+    run.disabled = roundsInput.disabled = true;
+    download.disabled = true;
+    report = { date: new Date().toISOString(), user_agent: navigator.userAgent,
+      hardware_concurrency: navigator.hardwareConcurrency, viewport: { width: innerWidth, height: innerHeight },
+      warmup_rounds: WARMUP_ROUNDS, results: [] };
+    output.textContent = "";
+    try {
+      const response = await fetch("/cases");
+      if (!response.ok) throw new Error(`Loading cases: HTTP ${response.status}`);
+      const cases = await response.json();
+      // Record ordinary frame cadence separately; frame intervals include
+      // refresh/vsync and scheduling, so they are not input-latency measurements.
+      const idle = [];
+      for (let i = 0; i < 12; i++) {
+        await frame();
+        const start = performance.now();
+        await frame();
+        idle.push(performance.now() - start);
+      }
+      report.idle_next_frame_ms = summary(idle);
+      for (const fixture of cases) {
+        status.textContent = `Fetching ${fixture.name}…`;
+        const texts = [];
+        for (const kind of ["event", "result"]) {
+          const response = await fetch(`/snapshots/${fixture.name}/${kind}`);
+          if (!response.ok) throw new Error(`Loading ${fixture.name}: HTTP ${response.status}`);
+          texts.push(await response.text());
+        }
+        for (const mode of ["event", "event_and_ack"]) {
+          status.textContent = `Measuring ${fixture.name}: ${mode}…`;
+          report.results.push(await measureCase(fixture, mode, rounds, ...texts));
+          output.textContent = JSON.stringify(report, null, 2);
+        }
+        latestSnapshot = null;
+      }
+      status.textContent = "Complete. Download results and record device, browser, power mode and any CPU throttling separately.";
+      download.disabled = false;
+    } catch (error) {
+      status.textContent = `Failed: ${error.message}`;
+    } finally {
+      latestSnapshot = null;
+      run.disabled = roundsInput.disabled = false;
+    }
+  });
+
+  download.addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "profile-snapshot-benchmark.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  status.textContent = "Ready. Two warmups per case precede the measured rounds.";
+  run.disabled = false;
+</script>
+</html>

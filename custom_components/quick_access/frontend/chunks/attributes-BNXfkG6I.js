@@ -1,0 +1,1 @@
+import{i as e,r as t}from"./js-yaml-jyO2toLL.js";function n(n){return typeof n==`object`&&n&&Object.keys(n).length===0?``:e(n,{schema:t,noRefs:!0})}export{n as serializeAttributes};

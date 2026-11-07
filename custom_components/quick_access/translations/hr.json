@@ -1,0 +1,38 @@
+{
+  "title": "Quick Access",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Quick Access",
+        "description": "Dodajte Quick Access pokretač u Home Assistant."
+      }
+    },
+    "abort": {
+      "already_configured": "Quick Access već je konfiguriran."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ograničenja resursa",
+        "description": "Ograničenja odmah vrijede za sve korisnike integracije Quick Access; potrošnja se računa po korisniku. Smanjenje ograničenja čuva postojeće profile. Korisnici i dalje mogu pregledavati profile i smanjivati potrošnju.",
+        "data": {
+          "max_profiles": "Najviše profila po korisniku",
+          "max_categories": "Najviše grupa po profilu",
+          "max_user_mib": "Ukupna pohrana po korisniku (MiB)",
+          "max_profile_mib": "Najveća pohrana po profilu (MiB)"
+        },
+        "data_description": {
+          "max_profiles": "Od 1 do 100 profila po korisniku.",
+          "max_categories": "Od 1 do 200 grupa po profilu, uključujući Favorite.",
+          "max_user_mib": "Od 1 do 16 MiB za sve profile i metapodatke dokumenta. Jedan MiB iznosi 1.048.576 bajtova.",
+          "max_profile_mib": "Od 1 do 4 MiB. Ne može premašiti ukupnu pohranu po korisniku."
+        }
+      }
+    },
+    "error": {
+      "invalid_limit": "Unesite cijeli broj unutar dopuštenog raspona.",
+      "profile_exceeds_user": "Najveća pohrana po profilu ne može premašiti ukupnu pohranu po korisniku."
+    }
+  }
+}

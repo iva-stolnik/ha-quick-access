@@ -1,0 +1,38 @@
+{
+  "title": "Quick Access",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Quick Access",
+        "description": "Add the Quick Access launcher to Home Assistant."
+      }
+    },
+    "abort": {
+      "already_configured": "Quick Access is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Resource limits",
+        "description": "Limits apply immediately to all Quick Access users; usage is counted per user. Lowering limits preserves existing profiles. Users can still view profiles and reduce usage.",
+        "data": {
+          "max_profiles": "Maximum profiles per user",
+          "max_categories": "Maximum groups per profile",
+          "max_user_mib": "Total storage per user (MiB)",
+          "max_profile_mib": "Maximum storage per profile (MiB)"
+        },
+        "data_description": {
+          "max_profiles": "From 1 to 100 profiles per user.",
+          "max_categories": "From 1 to 200 groups per profile, including Favorites.",
+          "max_user_mib": "From 1 to 16 MiB across all profiles and document metadata. One MiB is 1,048,576 bytes.",
+          "max_profile_mib": "From 1 to 4 MiB. Cannot exceed total storage per user."
+        }
+      }
+    },
+    "error": {
+      "invalid_limit": "Enter a whole number within the allowed range.",
+      "profile_exceeds_user": "Maximum storage per profile cannot exceed total storage per user."
+    }
+  }
+}

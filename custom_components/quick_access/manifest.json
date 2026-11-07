@@ -1,0 +1,25 @@
+{
+  "domain": "quick_access",
+  "name": "Quick Access",
+  "categories": [
+    "productivity_information"
+  ],
+  "codeowners": [
+    "@iva-stolnik"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom"
+  ],
+  "documentation": "https://github.com/iva-stolnik/ha-quick-access",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/iva-stolnik/ha-quick-access/issues",
+  "requirements": [
+    "ada-url==1.32.0"
+  ],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}

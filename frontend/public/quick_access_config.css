@@ -1,0 +1,197 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--primary-text-color, #212121);
+  background: var(--primary-background-color, #fafafa);
+  font-family: var(
+    --ha-font-family-body,
+    var(--paper-font-body1_-_font-family, Roboto, sans-serif)
+  );
+  font-size: var(--ha-font-size-m, 14px);
+  line-height: 1.5;
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 64px;
+  padding: 0 16px;
+  background: var(
+    --app-header-background-color,
+    var(--sidebar-background-color, var(--card-background-color, white))
+  );
+  color: var(--app-header-text-color, var(--primary-text-color, #212121));
+  border-bottom: 1px solid var(--divider-color, #ddd);
+}
+h1 {
+  margin: 0;
+  margin-inline-start: 16px;
+  font-size: 20px;
+  font-weight: 400;
+}
+button.menu {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  font-size: 24px;
+}
+main {
+  width: 100%;
+  max-width: 960px;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+}
+button:focus-visible {
+  outline: 2px solid var(--primary-color, #03a9f4);
+  outline-offset: 3px;
+}
+.qap-config-card {
+  display: block;
+  position: relative;
+  margin: 0 0 24px;
+  padding: 24px;
+  background: var(--ha-card-background, var(--card-background-color, white));
+  border: var(--ha-card-border-width, 1px) solid
+    var(--ha-card-border-color, var(--divider-color, #ddd));
+  border-radius: var(--ha-card-border-radius, 12px);
+  box-shadow: var(--ha-card-box-shadow, none);
+  backdrop-filter: var(--ha-card-backdrop-filter, none);
+  color: var(--primary-text-color, #212121);
+}
+h2 {
+  font-size: var(--ha-font-size-l, 18px);
+  font-weight: 500;
+  margin: 0 0 16px;
+}
+p {
+  margin: 0 0 12px;
+}
+label {
+  display: block;
+  font-weight: 500;
+  font-size: var(--ha-font-size-l, 16px);
+  margin-bottom: 4px;
+}
+/* Match the shortcut editor's select fields (see .qap-shortcut-form in quick_access.css). */
+.qap-field {
+  margin: 0 0 var(--ha-space-4, 16px);
+}
+.qap-native-control {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  --ha-color-text-primary: var(--primary-text-color, #212121);
+  --ha-color-text-secondary: var(--secondary-text-color, #727272);
+  --ha-border-radius-sm: var(--ha-border-radius-md, 8px);
+  --ha-input-padding-bottom: 0px;
+}
+qap-button {
+  min-width: 0;
+  max-width: 100%;
+  --ha-button-height: 44px;
+}
+qap-button::part(base) {
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 16px;
+}
+button {
+  min-height: 44px;
+  padding: 8px 24px;
+  margin: 0;
+  border: 1px solid var(--divider-color, #ddd);
+  border-radius: var(--ha-border-radius-md, 8px);
+  background: var(--card-background-color, white);
+  color: var(--primary-color, #03a9f4);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.status {
+  margin-bottom: 20px;
+  overflow-wrap: anywhere;
+}
+.status.error {
+  color: var(--error-color, #db4437);
+}
+@media (max-width: 600px) {
+  main {
+    padding: 16px 12px 28px;
+  }
+  .qap-config-card {
+    padding: 20px 16px;
+    margin-bottom: 16px;
+  }
+  .actions {
+    justify-content: space-between;
+  }
+}
+.device-actions {
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+.launcher-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.launcher-setting label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-height: 44px;
+  margin: 0;
+}
+button,
+qap-button,
+h2,
+.qap-config-card p {
+  overflow-wrap: anywhere;
+}
+.device-confirmation::part(base) {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--divider-color, #ddd);
+  border-radius: var(--ha-card-border-radius, 12px);
+  color: var(--primary-text-color, #212121);
+  background: var(--ha-card-background, var(--card-background-color, white));
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .device-actions qap-button {
+    width: 100%;
+  }
+  .device-confirmation::part(base) {
+    padding: 20px 16px;
+  }
+  .device-confirmation .actions qap-button {
+    flex: 1 1 auto;
+  }
+}

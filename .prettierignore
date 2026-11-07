@@ -1,0 +1,14 @@
+# Generated Vite output; rebuilt with `npm run build`.
+custom_components/quick_access/frontend/
+
+# Home Assistant integration metadata keeps HA's own formatting.
+custom_components/
+hacs.json
+.github/
+
+node_modules/
+.npm-cache/
+.venv/
+package-lock.json
+*.md
+tests/benchmark_profile_snapshots.html

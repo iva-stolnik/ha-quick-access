@@ -1,0 +1,30 @@
+{
+  "name": "ha-quick-access",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:unit && npm run test:build",
+    "test:unit": "node --experimental-vm-modules --test tests/module-graph.test.cjs tests/shortcut-order.test.cjs tests/entity-search.test.cjs tests/entity-selector.test.cjs tests/select-selector.test.cjs tests/attributes-viewer.test.cjs tests/state-icon.test.cjs tests/filtering.test.cjs tests/localization.test.cjs tests/presentation.test.cjs \"tests/frontend/*.test.cjs\"",
+    "test:frontend": "node --experimental-vm-modules --test \"tests/frontend/*.test.cjs\"",
+    "test:build": "node --experimental-vm-modules --test tests/build-output.test.cjs",
+    "test:browser": "node tests/browser.test.cjs",
+    "check": "npm run format:check && npm run typecheck && npm test && node --experimental-vm-modules scripts/check-frontend.cjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vite": "8.3.6"
+  },
+  "dependencies": {
+    "js-yaml": "5.4.2",
+    "lit": "3.3.1"
+  }
+}

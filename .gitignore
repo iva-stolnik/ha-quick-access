@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+.npm-cache/
+.DS_Store
+Thumbs.db
+
+PUBLISHING.md
+DEVELOPMENT.md

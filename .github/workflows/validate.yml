@@ -1,0 +1,138 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: Home Assistant validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: hacs/action@main
+        with:
+          category: integration
+          comment: "false"
+
+  tests:
+    name: Syntax and regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install integration requirements
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path("custom_components/quick_access/manifest.json").read_text(encoding="utf-8"))
+          subprocess.check_call([sys.executable, "-m", "pip", "install", *manifest["requirements"]])
+          PY
+      - name: Check HACS release metadata
+        run: python scripts/configure_repository.py --check
+      - name: Install frontend build dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Verify production build and committed installation assets
+        run: npm run test:build
+      - name: Check frontend syntax
+        run: |
+          node --experimental-vm-modules scripts/check-frontend.cjs
+      - name: Test frontend behavior
+        run: npm run test:unit
+      - name: Check Python syntax
+        run: python -m compileall -q custom_components/quick_access
+      - name: Test integration lifecycle and release metadata
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Check release tag matches integration version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path("custom_components/quick_access/manifest.json").read_text(encoding="utf-8"))
+          tag = os.environ["RELEASE_TAG"].removeprefix("v")
+          if tag != manifest["version"]:
+              raise SystemExit(f"Release tag {tag!r} does not match manifest version {manifest['version']!r}")
+          PY
+
+  browser:
+    # The browser tests take about 5 minutes in one process, so run them as parallel jobs.
+    name: Browser tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: controls
+            pattern: "Lit controls"
+          - name: dialog 320px, 390px
+            pattern: "owned dialog sizing"
+            widths: "320,390"
+          - name: dialog 768px
+            pattern: "owned dialog sizing"
+            widths: "768"
+          - name: dialog 1024px, 1440px
+            pattern: "owned dialog sizing"
+            widths: "1024,1440"
+          # Runs any browser test not selected above, so new tests are never left out.
+          - name: other
+            skip: "Lit controls|owned dialog sizing"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Test browser behavior
+        env:
+          QUICK_ACCESS_TEST_WIDTHS: ${{ matrix.widths }}
+          TEST_PATTERN: ${{ matrix.pattern }}
+          TEST_SKIP: ${{ matrix.skip }}
+        run: |
+          QUICK_ACCESS_BROWSER="$(command -v google-chrome)"
+          export QUICK_ACCESS_BROWSER
+          set -- tests/browser.test.cjs
+          [ -n "$TEST_PATTERN" ] && set -- --test-name-pattern="$TEST_PATTERN" "$@"
+          [ -n "$TEST_SKIP" ] && set -- --test-skip-pattern="$TEST_SKIP" "$@"
+          node --test "$@"

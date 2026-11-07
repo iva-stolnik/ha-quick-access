@@ -1,0 +1,6 @@
+# Keep copied assets and generated bundles reproducible on Windows and Linux.
+frontend/public/*.css text eol=lf
+frontend/public/locales/*.json text eol=lf
+custom_components/quick_access/frontend/**/*.js text eol=lf
+custom_components/quick_access/frontend/*.css text eol=lf
+custom_components/quick_access/frontend/locales/*.json text eol=lf
