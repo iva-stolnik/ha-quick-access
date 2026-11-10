@@ -28,6 +28,13 @@ import { conditionSummary, conditionIcon } from "./filter-presentation.js";
 import { createEntitySelectorSource } from "../entities/entity-selector.ts";
 
 const LINKED_SHORTCUT_PREVIEW_LIMIT = 3;
+// UI choice only; persisted device entity conditions use type: "entities".
+const DEVICE_ENTITIES_CONDITION = "entities";
+const createEntitiesCondition = () => ({
+  type: "entities",
+  quantifier: "any",
+  condition: group([rule()]),
+});
 
 /** Small declarative builder using Quick Access's public form controls and guards. */
 export function createFilterEditor({
@@ -807,9 +814,26 @@ export function createFilterEditor({
         refreshPreview();
         focusWhenReady(groupViews.get(condition).box.querySelector(".qap-filter-add-condition"));
       };
+      const replaceChild = (next) => {
+        condition.conditions[index] = next;
+        expandedCondition = next.type === "rule" ? next : next.condition.conditions[0];
+        rerender();
+        refreshPreview();
+        const nextRow = groupViews.get(condition).box.querySelector(".qap-filter-children")
+          .children[index];
+        nextRow.scrollIntoView?.({ block: "nearest" });
+        focusWhenReady(nextRow.querySelector("select, qap-select"), () => nextRow.isConnected);
+      };
       if (child.type === "group")
         row.append(renderGroup(child, scope, depth + 1, rerender, removeChild));
       else if (child.type === "entities") {
+        const field = conditionField(child, scope, depth);
+        field.onChange(() => {
+          if (field.value === DEVICE_ENTITIES_CONDITION) return;
+          replaceChild(
+            rule(field.value, "equals", field.value === "smart" ? SMART_FILTERS[scope][0] : ""),
+          );
+        });
         const quantifier = forms.select(
           t("filters.entities"),
           [
@@ -823,11 +847,12 @@ export function createFilterEditor({
           refreshPreview();
         });
         row.append(
+          field.element,
           quantifier.element,
           renderGroup(child.condition, "states", depth + 1, rerender, removeChild),
           node("small", "qap-muted", t("filters.empty_devices")),
         );
-      } else row.append(renderRule(child, scope, removeChild));
+      } else row.append(renderRule(child, scope, depth, removeChild, replaceChild));
       children.append(row);
     });
     const add = (title, symbol, make, className) => {
@@ -871,7 +896,7 @@ export function createFilterEditor({
         add(
           "filters.add_entities",
           "mdi:devices",
-          () => ({ type: "entities", quantifier: "any", condition: group([rule()]) }),
+          createEntitiesCondition,
           "qap-filter-add-entities",
         );
     }
@@ -886,7 +911,7 @@ export function createFilterEditor({
     sync();
     return box;
   }
-  function renderRule(condition, scope, remove) {
+  function renderRule(condition, scope, depth, remove, replace) {
     const row = node("div", "qap-filter-rule");
     const summary = node("div", "qap-filter-rule-summary");
     const toggle = button("", () => expandRule(condition), "qap-linkish qap-filter-rule-toggle");
@@ -938,7 +963,7 @@ export function createFilterEditor({
       for (const control of valueControls)
         if (fields.contains(control.element)) valueControls.delete(control);
       replaceLocalizedChildren(fields);
-      const controls = renderRuleFields(condition, scope, fields, rerender);
+      const controls = renderRuleFields(condition, scope, depth, fields, rerender, replace);
       sync();
       if (focusLabel && expandedCondition === condition) {
         focusWhenReady(controls[focusLabel].control, () => expandedCondition === condition);
@@ -948,16 +973,26 @@ export function createFilterEditor({
     rerender();
     return row;
   }
-  function renderRuleFields(condition, scope, row, rerender) {
-    const field = forms.select(
+  function conditionField(condition, scope, depth) {
+    const options = (scope === "devices" ? DEVICE_FIELDS : ENTITY_FIELDS).map((value) => [
+      value,
+      t(`filters.field_${value}`),
+    ]);
+    if (scope === "devices" && (depth < FILTER_DEPTH_LIMIT || condition.type === "entities"))
+      options.push([DEVICE_ENTITIES_CONDITION, t("filters.entities")]);
+    return forms.select(
       t("filters.field"),
-      (scope === "devices" ? DEVICE_FIELDS : ENTITY_FIELDS).map((value) => [
-        value,
-        t(`filters.field_${value}`),
-      ]),
-      condition.field,
+      options,
+      condition.type === "entities" ? DEVICE_ENTITIES_CONDITION : condition.field,
     );
+  }
+  function renderRuleFields(condition, scope, depth, row, rerender, replace) {
+    const field = conditionField(condition, scope, depth);
     field.onChange(() => {
+      if (field.value === DEVICE_ENTITIES_CONDITION) {
+        if (scope === "devices" && depth < FILTER_DEPTH_LIMIT) replace(createEntitiesCondition());
+        return;
+      }
       condition.field = field.value;
       delete condition.attribute;
       condition.operator = "equals";

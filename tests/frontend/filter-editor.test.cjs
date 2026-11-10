@@ -213,6 +213,217 @@ test("device filter field changes reset incompatible values and nested groups ex
   });
 });
 
+test("entity Condition dropdowns never offer Device entities", async () => {
+  const env = environment();
+  await openEntityStates(env);
+  const panel = await editNewFilter(env, "Entity conditions");
+  const definitions = await filterDefinitions(env);
+  assert.deepEqual(
+    Array.from(filterField(panel, "Condition").options, (item) => item.value),
+    clone(definitions.ENTITY_FIELDS),
+  );
+  assert.ok(!definitions.DEVICE_FIELDS.includes("entities"));
+  assert.ok(!definitions.DEVICE_FIELDS.includes("device_entities"));
+});
+
+test("Device entities selection saves native nodes, edits nested conditions and previews ANY/ALL", async () => {
+  const env = environment();
+  installDeviceRegistries(env, [
+    deviceFixture(),
+    deviceFixture("device_b"),
+    deviceFixture("empty"),
+  ]);
+  env.status.hass.entities = {
+    "sensor.one": { device_id: "device_a" },
+    "sensor.two": { device_id: "device_a" },
+    "sensor.three": { device_id: "device_b" },
+  };
+  env.status.hass.states = Object.fromEntries(
+    ["unknown", "on", "unknown"].map((state, index) => [
+      ["sensor.one", "sensor.two", "sensor.three"][index],
+      { entity_id: ["sensor.one", "sensor.two", "sensor.three"][index], state, attributes: {} },
+    ]),
+  );
+  await openDevices(env);
+  const panel = await editNewFilter(env, "Entity devices", "Thermostat");
+  const name = filterField(panel, "Filter name");
+  const choice = filterField(panel, "Condition").options.find((item) => item.value === "entities");
+  assert.equal(choice.label, "Device entities");
+  await setFilterField(panel, "Condition", "smart");
+  await setFilterField(panel, "Condition", "entities");
+  assert.equal(filterField(panel, "Condition").value, "entities");
+  assert.equal(filterField(panel, "Filter name"), name);
+  assert.equal(env.document.activeElement, filterField(panel, "Condition"));
+  assert.equal(filterField(panel, "Device entities").value, "any");
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "0 matching devices");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  const definitions = await filterDefinitions(env);
+  const native = {
+    type: "entities",
+    quantifier: "any",
+    condition: clone(definitions.group([definitions.rule("state")])),
+  };
+  assert.deepEqual(savedProfile(env).filters.devices.at(-1).condition.conditions[0], native);
+
+  await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+  await filterAction(env, panel, "Entity devices", "edit");
+  let nested = panel.querySelector(".qap-filter-rule");
+  assert.deepEqual(
+    Array.from(filterField(nested, "Condition").options, (item) => item.value),
+    clone(definitions.ENTITY_FIELDS),
+  );
+  await clickAndFlush(nested.querySelector(".qap-filter-edit-condition"));
+  await setFilterField(nested, "Value", "unknown");
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "2 matching devices");
+  await setFilterField(panel, "Device entities", "all");
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "1 matching device");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  native.quantifier = "all";
+  native.condition.conditions[0].value = "unknown";
+  assert.deepEqual(savedProfile(env).filters.devices.at(-1).condition.conditions[0], native);
+  assert.ok(definitions.validFilters(savedProfile(env).filters));
+
+  await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+  await filterAction(env, panel, "Entity devices", "edit");
+  assert.equal(filterField(panel, "Condition").value, "entities");
+  assert.equal(filterField(panel, "Device entities").value, "all");
+  nested = panel.querySelector(".qap-filter-rule");
+  await clickAndFlush(nested.querySelector(".qap-filter-edit-condition"));
+  await setFilterField(nested, "Condition", "domain");
+  await setFilterField(nested, "Value", "sensor");
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "2 matching devices");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  native.condition.conditions[0] = clone(definitions.rule("domain", "equals", "sensor"));
+  assert.deepEqual(savedProfile(env).filters.devices.at(-1).condition.conditions[0], native);
+});
+
+for (const field of ["name", "smart"]) {
+  test(`saved entity issues filters switch to a clean ${field} rule and back`, async () => {
+    const env = environment();
+    installDeviceRegistries(env, [deviceFixture(), deviceFixture("device_b")]);
+    env.status.hass.entities = {
+      "sensor.issue": { device_id: "device_a" },
+      "sensor.ok": { device_id: "device_a" },
+      "sensor.other_issue": { device_id: "device_b" },
+    };
+    env.status.hass.states = {
+      "sensor.issue": { entity_id: "sensor.issue", state: "unavailable", attributes: {} },
+      "sensor.ok": { entity_id: "sensor.ok", state: "on", attributes: {} },
+      "sensor.other_issue": { entity_id: "sensor.other_issue", state: "unknown", attributes: {} },
+    };
+    await openDevices(env);
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    const panel = env.document.body.querySelector(".qap-filter-panel");
+    await filterAction(env, panel, "Devices with entity issues", "edit");
+    assert.equal(filterField(panel, "Condition").value, "entities");
+    assert.equal(filterField(panel, "Device entities").value, "any");
+    assert.equal(panel.querySelector(".qap-filter-preview").textContent, "2 matching devices");
+    await setFilterField(panel, "Device entities", "all");
+    assert.equal(panel.querySelector(".qap-filter-preview").textContent, "1 matching device");
+    await setFilterField(panel, "Device entities", "any");
+    const entityGroup = panel.querySelectorAll(".qap-filter-group")[1];
+    for (const [operator, preview] of [
+      ["or", "2 matching devices"],
+      ["not", "1 matching device"],
+      ["and", "2 matching devices"],
+    ]) {
+      await clickAndFlush(entityGroup.querySelector(".qap-filter-logic"));
+      await clickAndFlush(profileMenuIn(env).querySelector(`.qap-filter-logic-${operator}`));
+      assert.equal(entityGroup.dataset.operator, operator);
+      assert.equal(panel.querySelector(".qap-filter-preview").textContent, preview);
+    }
+    await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+    const definitions = await filterDefinitions(env);
+    const original = clone(
+      definitions.filterTemplates("devices").find((item) => item.id === "entity_issues"),
+    );
+    assert.deepEqual(
+      savedProfile(env).filters.devices.find((item) => item.id === "entity_issues"),
+      original,
+    );
+
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    await filterAction(env, panel, "Devices with entity issues", "edit");
+    await setFilterField(panel, "Condition", field);
+    assert.equal(panel.querySelectorAll(".qap-filter-group").length, 1);
+    assert.equal(panel.querySelectorAll(".qap-filter-rule").length, 1);
+    assert.equal(filterField(panel, "Condition").value, field);
+    assert.equal(filterField(panel, "Comparison").value, "equals");
+    assert.equal(filterField(panel, "Value").value, field === "smart" ? "assigned" : "");
+    assert.equal(env.document.activeElement, filterField(panel, "Condition"));
+    await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+    assert.deepEqual(
+      savedProfile(env).filters.devices.find((item) => item.id === "entity_issues").condition,
+      clone(
+        definitions.group([definitions.rule(field, "equals", field === "smart" ? "assigned" : "")]),
+      ),
+    );
+    assert.ok(definitions.validFilters(savedProfile(env).filters));
+
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    await filterAction(env, panel, "Devices with entity issues", "edit");
+    await clickAndFlush(panel.querySelector(".qap-filter-edit-condition"));
+    await setFilterField(panel, "Condition", "entities");
+    assert.equal(filterField(panel, "Device entities").value, "any");
+    assert.equal(filterField(panel.querySelector(".qap-filter-rule"), "Value").value, "");
+    await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+    assert.deepEqual(
+      savedProfile(env).filters.devices.find((item) => item.id === "entity_issues").condition,
+      clone(
+        definitions.group([
+          {
+            type: "entities",
+            quantifier: "any",
+            condition: definitions.group([definitions.rule()]),
+          },
+        ]),
+      ),
+    );
+  });
+}
+
+test("Device entities choices enforce depth and preserve condition limits when replacing rules", async () => {
+  const env = environment();
+  installDeviceRegistries(env);
+  env.status.hass.entities = {};
+  await openDevices(env);
+  const panel = await editNewFilter(env, "Device limits");
+  const definitions = await filterDefinitions(env);
+  await clickAndFlush(panel.querySelector(".qap-filter-add-group"));
+  let nested = panel.querySelectorAll(".qap-filter-group")[1];
+  assert.ok(filterField(nested, "Condition").options.some((item) => item.value === "entities"));
+  await clickAndFlush(nested.querySelector(".qap-filter-add-group"));
+  const deepest = panel.querySelectorAll(".qap-filter-group")[2];
+  assert.equal(deepest.dataset.depth, String(definitions.FILTER_DEPTH_LIMIT));
+  assert.ok(!filterField(deepest, "Condition").options.some((item) => item.value === "entities"));
+  assert.equal(deepest.querySelector(".qap-filter-add-entities"), null);
+  // Even a stale/programmatic choice cannot create a node beyond the depth limit.
+  await setFilterField(deepest, "Condition", "entities");
+  assert.equal(panel.querySelectorAll(".qap-filter-group").length, 3);
+  for (let index = 3; index < definitions.CONDITION_LIMIT; index++)
+    await clickAndFlush(panel.querySelector(".qap-filter-add-condition"));
+  assert.ok(panel.querySelectorAll(".qap-filter-add-condition").every((action) => action.disabled));
+  await setFilterField(panel, "Condition", "entities");
+  assert.equal(panel.querySelectorAll(".qap-filter-rule").length, definitions.CONDITION_LIMIT);
+  assert.ok(panel.querySelectorAll(".qap-filter-add-condition").every((action) => action.disabled));
+  assert.ok(panel.querySelectorAll(".qap-filter-add-entities").every((action) => action.disabled));
+  nested = panel
+    .querySelectorAll(".qap-filter-group")
+    .find((item) => item.dataset.depth === "1" && filterField(item, "Condition").value === "name");
+  await setFilterField(nested, "Condition", "entities");
+  const entityGroup = panel.querySelectorAll(".qap-filter-group")[3];
+  assert.equal(entityGroup.dataset.depth, String(definitions.FILTER_DEPTH_LIMIT));
+  assert.equal(entityGroup.querySelector(".qap-filter-add-group"), null);
+  assert.equal(entityGroup.querySelector(".qap-filter-add-entities"), null);
+  assert.equal(panel.querySelectorAll(".qap-filter-rule").length, definitions.CONDITION_LIMIT);
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  const saved = savedProfile(env).filters.devices.at(-1).condition;
+  assert.equal(saved.conditions[0].type, "entities");
+  assert.equal(saved.conditions[1].conditions[0].type, "entities");
+  assert.ok(definitions.validCondition(saved, "devices"));
+  assert.ok(definitions.validFilters(savedProfile(env).filters));
+});
+
 for (const action of ["Save", "Apply temporarily"]) {
   test(`filter logic badge selects AND/OR/NOT without a Match selector (${action})`, async () => {
     const env = environment();
