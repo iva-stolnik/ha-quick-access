@@ -3012,7 +3012,7 @@ async function verifyVisualFilterTree({ evaluate, send, width }) {
     await evaluate(
       `Array.from(treeModal.querySelector('.qap-filter-logic-menu').querySelectorAll('qap-menu-item'),item=>item.textContent)`,
     ),
-    ["AND", "OR", "NOT"],
+    ["AND", "OR", "NONE"],
   );
   assert.equal(
     await evaluate(`(()=>{const menu=treeModal.querySelector('.qap-filter-logic-menu'),rect=menu.shadowRoot.querySelector('[popover]').getBoundingClientRect(),bounds=treeModal.shadowRoot.querySelector("dialog").getBoundingClientRect();
@@ -3020,7 +3020,7 @@ async function verifyVisualFilterTree({ evaluate, send, width }) {
     true,
   );
   await evaluate(`treeModal.querySelector('.qap-filter-logic-not').click()`);
-  assert.equal(await evaluate(`treeModal.querySelector('.qap-filter-logic').textContent`), "NOT");
+  assert.equal(await evaluate(`treeModal.querySelector('.qap-filter-logic').textContent`), "NONE");
   await evaluate(
     `treeModal.querySelector('.qap-filter-logic').click();treeModal.querySelector('.qap-filter-logic-and').click()`,
   );
