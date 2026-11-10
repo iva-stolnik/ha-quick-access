@@ -20,6 +20,52 @@ const {
 let defaultLinks;
 test.before(async () => ({ defaultLinks } = await loadDefaults()));
 
+test("FAB menu hides Move button for touch and shows it for mouse and keyboard", async () => {
+  const env = await startProfiles(environment());
+  const menu = env.document.body.querySelector("#qap-menu");
+  const [move, reset, reload] = buttons(menu);
+  let focused;
+  for (const item of [move, reset, reload]) item.focus = () => (focused = item);
+  const visibleActions = () => buttons(menu).filter((item) => !item.hidden);
+
+  for (const pointerType of ["mouse", "touch", "pen", "touch"]) {
+    fabPointer(env, "pointerdown", 320, 720, pointerType);
+    await env.tick(480);
+    fabPointer(env, "pointerup", 320, 720, pointerType);
+    assert.equal(menu.hidden, false);
+    assert.deepEqual(
+      visibleActions(),
+      pointerType === "touch" ? [reset, reload] : [move, reset, reload],
+    );
+  }
+
+  for (const key of ["Enter", " ", "F10"]) {
+    env
+      .fab()
+      .dispatchEvent(
+        Object.assign(new Event("keydown", { cancelable: true }), { key, shiftKey: true }),
+      );
+    assert.deepEqual(visibleActions(), [move, reset, reload]);
+    assert.equal(focused, move);
+    for (const [key, expected] of [
+      ["ArrowUp", reload],
+      ["ArrowDown", move],
+      ["ArrowDown", reset],
+      ["End", reload],
+      ["Home", move],
+    ]) {
+      const target = focused;
+      menu.dispatchEvent(
+        Object.assign(new Event("keydown", { cancelable: true }), {
+          key,
+          composedPath: () => [target, menu],
+        }),
+      );
+      assert.equal(focused, expected);
+    }
+  }
+});
+
 test("position auto-saving and resetting report errors without pretending to persist", async () => {
   const env = environment();
   await startProfiles(env, false);

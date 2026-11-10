@@ -144,6 +144,9 @@
   display: flex;
   width: 100%;
 }
+#qap-menu .qap-menu-action[hidden] {
+  display: none;
+}
 #qap-menu button.qap-menu-action {
   font: inherit;
   gap: 10px;

@@ -1326,7 +1326,7 @@ const arrangeKey = (item, key) =>
     Object.assign(new Event("keydown", { cancelable: true }), { altKey: true, key }),
   );
 
-function fabPointer(env, type, x = 320, y = 720) {
+function fabPointer(env, type, x = 320, y = 720, pointerType = "mouse") {
   const fab = env.fab();
   fab.setPointerCapture = () => {};
   fab.hasPointerCapture = () => false;
@@ -1336,7 +1336,13 @@ function fabPointer(env, type, x = 320, y = 720) {
     return { left, top, right: left + 48, bottom: top + 48 };
   };
   fab.dispatchEvent(
-    Object.assign(new Event(type), { pointerId: 1, button: 0, clientX: x, clientY: y }),
+    Object.assign(new Event(type), {
+      pointerId: 1,
+      pointerType,
+      button: 0,
+      clientX: x,
+      clientY: y,
+    }),
   );
 }
 async function dragFab(env, finish = "pointerup") {

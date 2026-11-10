@@ -21,6 +21,7 @@ export function createPositionController({
   let keyboardPosition = null;
   let fab;
   let menu;
+  let moveButton;
   let hold = null;
   let cancelKeyboardRelease = null;
   let buttonError = "";
@@ -68,7 +69,8 @@ export function createPositionController({
     if ((restoreFocus || hadFocus) && !fab?.hidden) fab?.focus({ preventScroll: true });
   }
 
-  function showMenu(focus = false) {
+  function showMenu(focus = false, pointerType) {
+    if (pointerType !== undefined) moveButton.hidden = pointerType === "touch";
     const r = fab.getBoundingClientRect();
     menu.hidden = false;
     fab.setAttribute("aria-expanded", "true");
@@ -77,7 +79,10 @@ export function createPositionController({
     const h = menu.offsetHeight;
     menu.style.left = `${clamp(r.right - width, EDGE, Math.max(EDGE, innerWidth - width - EDGE))}px`;
     menu.style.top = `${clamp(r.top > h + EDGE ? r.top - h - 10 : r.bottom + 10, EDGE, Math.max(EDGE, innerHeight - h - EDGE))}px`;
-    if (focus) menu.querySelector(".qap-menu-action").focus({ preventScroll: true });
+    if (focus)
+      [...menu.querySelectorAll(".qap-menu-action")]
+        .find((item) => !item.hidden && !item.disabled)
+        ?.focus({ preventScroll: true });
   }
 
   function startKeyboardPosition() {
@@ -156,7 +161,7 @@ export function createPositionController({
       if (event.shiftKey && (activation || event.key === "F10")) {
         consume(event);
         suppressedKey = event.key;
-        if (!event.repeat) showMenu(true);
+        if (!event.repeat) showMenu(true, "keyboard");
       } else if (event.key === "Escape" && !menu.hidden) {
         consume(event);
         hideMenu(true);
@@ -197,7 +202,9 @@ export function createPositionController({
       }
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
       consume(event);
-      const items = [...menu.querySelectorAll(".qap-menu-action")].filter((item) => !item.disabled);
+      const items = [...menu.querySelectorAll(".qap-menu-action")].filter(
+        (item) => !item.hidden && !item.disabled,
+      );
       const index = items.findIndex((item) => event.composedPath().includes(item));
       let next;
       if (event.key === "Home") next = 0;
@@ -270,7 +277,7 @@ export function createPositionController({
         if (!hold || hold.cancelled) return;
         hold.held = true;
         fab.classList.add("qap-holding");
-        showMenu();
+        showMenu(false, event.pointerType || "mouse");
       }, HOLD_MS);
       fab.setPointerCapture(event.pointerId);
     });
@@ -317,6 +324,7 @@ export function createPositionController({
     removeLocalizedElement(menu);
     fab = null;
     menu = null;
+    moveButton = null;
   }
 
   function ensureButton() {
@@ -345,8 +353,8 @@ export function createPositionController({
       menu.setAttribute("aria-labelledby", "qap-menu-title");
       const menuTitle = node("h2", "qap-menu-title", t("launcher.title"));
       menuTitle.id = "qap-menu-title";
-      const move = button(t("fab.move_button"), startKeyboardPosition, "qap-menu-action");
-      l10n.attribute(move, "aria-description", FAB_MOVE_DESCRIPTION);
+      moveButton = button(t("fab.move_button"), startKeyboardPosition, "qap-menu-action");
+      l10n.attribute(moveButton, "aria-description", FAB_MOVE_DESCRIPTION);
       const reset = button(t("fab.reset_position"), resetPosition, "qap-menu-action");
       reset.prepend(leadingIcon("mdi:restore"));
       const reload = button(
@@ -355,7 +363,7 @@ export function createPositionController({
         "qap-menu-action",
       );
       reload.prepend(leadingIcon("mdi:reload"));
-      menu.append(menuTitle, move, reset, reload);
+      menu.append(menuTitle, moveButton, reset, reload);
       document.body.append(fab, menu);
       setupPointer();
       setupKeyboard();
