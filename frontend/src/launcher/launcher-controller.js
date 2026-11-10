@@ -257,7 +257,7 @@ export function createLauncher({ controlsFactory = createControls } = {}) {
     toast,
     clearToast,
     navigationChanged: () => navigationHistory.sync(),
-    restoreDetails: (id) => registryList?.openDetails(id),
+    restoreDetails: (id, kind) => registryList?.openDetails(id, undefined, kind),
   });
   const navigationHistory = createNavigationHistory({
     read: readNavigation,

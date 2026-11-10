@@ -79,15 +79,21 @@ test("device matching entity controls preserve native tab order and cross unmoun
   assert.equal(tab(expand), false, "Tab crosses mounted rows natively");
   assert.equal(tab(list.children[1].querySelector(".qap-state-summary"), true), false);
   await clickAndFlush(expand);
+  const matchingSummary = first
+    .querySelector(".qap-matching-entity")
+    .querySelector(".qap-state-summary");
   assert.equal(expand.attributes["aria-expanded"], "true");
   assert.equal(tab(summary), false, "expanded content preserves the row's tab order");
+  assert.equal(tab(expand), false, "Tab reaches the matching entity before the next device");
+  assert.equal(tab(matchingSummary, true), false, "Shift+Tab reaches the expansion button");
   await scrollStates(env, 160 + 50 * 74);
   assert.equal(
     list.children.some((row) => row.dataset.device === "device_001"),
     false,
   );
   assert.equal(tab(summary), false, "an unmounted next row must not skip the expansion button");
-  assert.equal(tab(expand), true);
+  assert.equal(tab(expand), false);
+  assert.equal(tab(matchingSummary), true);
   assert.equal(
     env.document.activeElement,
     list.children
@@ -161,8 +167,8 @@ test("device entity filters batch affected devices, keep explanations collapsed,
   assert.equal(details.children.length, 0);
   await clickAndFlush(count);
   assert.equal(details.children.length, 1);
-  assert.equal(details.querySelector("strong").textContent, "sensor.a");
-  assert.equal(details.querySelector("span").textContent, "unknown");
+  assert.equal(details.querySelector(".qap-state-name").textContent, "sensor.a");
+  assert.equal(details.querySelector(".qap-state-value").textContent, "unknown");
   untouchedReads = 0;
   provider.publish({
     ...env.status.hass.states,
@@ -201,6 +207,68 @@ test("device entity filters batch affected devices, keep explanations collapsed,
     "device_a",
     "in-place registry notifications rebuild relationship indices",
   );
+});
+
+test("matching entities reuse entity rows and details, refresh live, and restore focus and history in Devices", async () => {
+  const env = navigationEnvironment();
+  const provider = statesProvider(env);
+  const definitions = await filterDefinitions(env);
+  savedProfile(env).filters = clone(definitions.profileFilters());
+  savedProfile(env).filters.defaults = { devices: "entity_issues" };
+  installDeviceRegistries(env);
+  env.status.hass.entities = { "sensor.issue": { device_id: "device_a" } };
+  env.status.hass.states = {
+    "sensor.issue": {
+      entity_id: "sensor.issue",
+      state: "unknown",
+      attributes: { friendly_name: "Kitchen temperature", unit_of_measurement: "°C" },
+    },
+  };
+  await openDevices(env);
+  await env.tick(250);
+  const deviceRow = env.document.body.querySelector(".qap-state-row");
+  await clickAndFlush(deviceRow.querySelector(".qap-matching-count"));
+  const matching = () => deviceRow.querySelector(".qap-matching-entity");
+  const summary = () => matching().querySelector(".qap-state-summary");
+  assert.equal(matching().classList.contains("qap-state-row"), true);
+  assert.equal(matching().dataset.entity, "sensor.issue");
+  assert.equal(matching().dataset.device, undefined);
+  assert.equal(summary().localName, "button");
+  assert.equal(summary().attributes["aria-label"], "View details for sensor.issue");
+  assert.equal(matching().querySelector(".qap-state-name").textContent, "Kitchen temperature");
+  assert.equal(matching().querySelector(".qap-state-id").textContent, "sensor.issue");
+  assert.ok(matching().querySelector("qap-state-icon"));
+  await clickAndFlush(summary());
+  await env.settle();
+  const modal = () => env.document.body.querySelector(".qap-state-modal");
+  assert.equal(modal().dataset.kind, "states");
+  assert.equal(modal().dataset.entity, "sensor.issue");
+  assert.equal(modal().querySelector("h2").textContent, "Entity details");
+  await clickAndFlush(modal().querySelector(".qap-state-dialog-favorite"));
+  assert.deepEqual(savedProfile(env).favorites, ["sensor.issue"]);
+  assert.deepEqual(savedProfile(env).device_favorites || [], []);
+  provider.publish({
+    "sensor.issue": {
+      ...env.status.hass.states["sensor.issue"],
+      state: "unavailable",
+      attributes: { friendly_name: "Updated temperature" },
+    },
+  });
+  await env.tick(250);
+  assert.equal(modal().querySelector(".qap-state-dialog-name").textContent, "Updated temperature");
+  assert.equal(matching().querySelector(".qap-state-name").textContent, "Updated temperature");
+  assert.equal(deviceRow.isConnected, true);
+  await clickAndFlush(buttons(modal()).find((button) => button.title === "Back"));
+  await env.settle();
+  assert.equal(modal(), null);
+  assert.equal(env.document.activeElement, summary());
+  await env.forward();
+  assert.equal(modal().dataset.kind, "states");
+  assert.equal(modal().dataset.entity, "sensor.issue");
+  await env.back();
+  assert.equal(modal(), null);
+  assert.equal(env.document.activeElement, summary());
+  assert.equal(deviceRow.querySelector(".qap-matching-count").attributes["aria-expanded"], "true");
 });
 
 for (const kind of ["states", "devices"]) {

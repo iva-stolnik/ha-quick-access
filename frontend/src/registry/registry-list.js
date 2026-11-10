@@ -752,7 +752,7 @@ export function mountRegistryList(
     const focused = [...rowsById.values()].find((entry) =>
       entry.row.contains(document.activeElement),
     );
-    const retainedId = details.active?.dataset.id || focused?.row.dataset.id;
+    const retainedId = detailsRowId() || focused?.row.dataset.id;
     const retainedIndex = indexById.get(retainedId);
     if (retainedIndex !== undefined) indices.add(retainedIndex);
     const ordered = [...indices].sort((a, b) => a - b);
@@ -800,38 +800,43 @@ export function mountRegistryList(
       details.returnFocus = editor?.active
         ? previewRow?.querySelector(".qap-state-summary") ||
           filterHost.querySelector(".qap-filter-preview-action")
-        : rowsById.get(details.active.dataset.id)?.summary || searchInput;
+        : detailsTrigger(details.active.dataset.id, details.active.dataset.kind) || searchInput;
     }
   }
 
   function lastRowControl(entry) {
+    const matchingRows = entry.explanation?.children;
+    if (!entry.explanation?.hidden && matchingRows?.length)
+      return matchingRows[matchingRows.length - 1].querySelector(".qap-state-summary");
     return entry.explain && !entry.explain.hidden && !entry.explain.disabled
       ? entry.explain
       : entry.summary;
   }
 
-  function createStateRow(state, preview = false) {
-    const id = recordId(state);
+  function createStateRow(state, preview = false, rowKind = kind) {
+    const rowDevices = rowKind === "devices";
+    const rowLabels = rowDevices ? "devices" : "entities";
+    const id = rowDevices ? state.id : state.entity_id;
     const row = node("div", "qap-state-row");
     row.dataset.id = id;
-    if (devices) row.dataset.device = id;
+    if (rowDevices) row.dataset.device = id;
     else row.dataset.entity = id;
     row.setAttribute("role", "listitem");
     const summary = node("button", "qap-state-summary");
     summary.type = "button";
-    l10n.attribute(summary, "aria-label", t(`${labels}.view_details`, { id }));
+    l10n.attribute(summary, "aria-label", t(`${rowLabels}.view_details`, { id }));
     summary.addEventListener("click", () => {
       if (!preview) {
         rememberSearch();
         updateRecentSearches();
       }
-      openDetails(id, summary);
+      openDetails(id, summary, rowKind);
     });
     const info = node("span", "qap-state-info");
     const name = node("span", "qap-state-name");
     const entityId = node("small", "qap-state-id", id);
     info.append(name, entityId);
-    const stateIcon = devices ? deviceIcon(state) : entityIcon(state);
+    const stateIcon = rowDevices ? deviceIcon(state) : entityIcon(state);
     const value = node("span", "qap-state-value");
     summary.append(stateIcon, info, value, icon("mdi:chevron-right", "qap-expand-icon"));
     row.append(summary);
@@ -847,7 +852,9 @@ export function mountRegistryList(
       expanded: false,
     };
     if (devices && !preview) {
-      entry.explanation = node("div", "qap-matching-entities");
+      entry.explanation = node("div", "qap-state-list qap-matching-entities");
+      entry.explanation.setAttribute("role", "list");
+      l10n.attribute(entry.explanation, "aria-label", t("entities.title"));
       entry.explanation.id = `qap-matches-${id}`;
       entry.explain = button(
         "",
@@ -862,7 +869,7 @@ export function mountRegistryList(
       row.append(entry.explain, entry.explanation);
     }
     if (!preview) {
-      const onTab = (event) => {
+      entry.onTab = (event) => {
         if (
           event.key !== "Tab" ||
           event.altKey ||
@@ -888,8 +895,8 @@ export function mountRegistryList(
           (event.shiftKey ? lastRowControl(target) : target.summary).focus({ preventScroll: true });
         scheduleRows();
       };
-      summary.addEventListener("keydown", onTab);
-      entry.explain?.addEventListener("keydown", onTab);
+      summary.addEventListener("keydown", entry.onTab);
+      entry.explain?.addEventListener("keydown", entry.onTab);
     }
     return entry;
   }
@@ -920,8 +927,11 @@ export function mountRegistryList(
         replaceLocalizedChildren(entry.explanation);
         for (const entityId of ids) {
           const state = currentEntityStates[entityId];
-          const line = node("div", "qap-matching-entity");
-          line.append(node("strong", "", entityId), node("span", "", state?.state ?? ""));
+          if (!state) continue;
+          const matching = createStateRow(state, true, "states");
+          matching.row.classList.add("qap-matching-entity");
+          matching.summary.addEventListener("keydown", entry.onTab);
+          updateEntityRow(matching, state);
           // Render only attributes referenced by the condition, not the full state.
           const attributes = new Set();
           const collect = (item) => {
@@ -935,14 +945,14 @@ export function mountRegistryList(
               : getFilters()[kind].find((item) => item.id === view.filter);
           if (definition?.condition) collect(definition.condition);
           for (const attribute of attributes)
-            line.append(
+            matching.name.parentElement.append(
               node(
                 "small",
-                "",
+                "qap-matching-attribute",
                 `${attribute}: ${JSON.stringify(state?.attributes?.[attribute]) ?? "—"}`,
               ),
             );
-          entry.explanation.append(line);
+          entry.explanation.append(matching.row);
         }
       }
     }
@@ -1009,7 +1019,7 @@ export function mountRegistryList(
     renderedStates = nextStates;
     let membershipChanged = false;
     let visibleChanged = !incremental;
-    let detailsChanged = !incremental;
+    let detailsChanged = !incremental || affectedDevices.has(detailsRowId());
     const searchTerm = appliedSearch.trim().toLocaleLowerCase();
     const matchesFilter = (state) => {
       if (compiled) {
@@ -1098,17 +1108,36 @@ export function mountRegistryList(
     }
   }
 
-  function openDetails(id, trigger = rowsById.get(id)?.summary || searchInput) {
+  function detailsRowId() {
+    if (!details.active) return undefined;
+    return devices && details.active.dataset.kind === "states"
+      ? relationships.entityDeviceIds.get(details.active.dataset.id)
+      : details.active.dataset.id;
+  }
+
+  function detailsTrigger(id, detailsKind) {
+    if (devices && detailsKind === "states") {
+      const entry = rowsById.get(relationships.entityDeviceIds.get(id));
+      return (
+        [...(entry?.explanation.children || [])]
+          .find((row) => row.dataset.entity === id)
+          ?.querySelector(".qap-state-summary") || entry?.summary
+      );
+    }
+    return rowsById.get(id)?.summary;
+  }
+
+  function openDetails(id, trigger, detailsKind = kind) {
     if (disposed) return;
     details.open(
       id,
-      trigger,
+      trigger || detailsTrigger(id, detailsKind) || searchInput,
       () => {
         if (view.filter === "favorites" && !view.favorites.size) view.filter = "all";
         updateFilters();
         updateList();
       },
-      kind,
+      detailsKind,
     );
   }
 

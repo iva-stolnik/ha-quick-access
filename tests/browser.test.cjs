@@ -4660,13 +4660,50 @@ test(
             "true",
           );
           assert.equal(
-            await evaluate(`document.querySelector('.qap-matching-entities strong').textContent`),
+            await evaluate(
+              `document.querySelector('.qap-matching-entities .qap-state-name').textContent`,
+            ),
             "sensor.issue_0",
           );
           await pressTab();
           assert.equal(
             await evaluate(
+              `document.activeElement===document.querySelector('.qap-matching-entity .qap-state-summary')`,
+            ),
+            true,
+            "Tab reaches the matching entity",
+          );
+          await evaluate(`document.activeElement.click()`);
+          await evaluate(settleDialogsExpression);
+          assert.equal(
+            await evaluate(`document.querySelector('.qap-state-modal h2').textContent`),
+            "Entity details",
+          );
+          assert.equal(
+            await evaluate(`document.querySelector('.qap-state-modal').dataset.entity`),
+            "sensor.issue_0",
+          );
+          await evaluate(
+            `document.querySelector('.qap-state-modal-head .qap-icon-button').click()`,
+          );
+          await evaluate(settleDialogsExpression);
+          assert.equal(
+            await evaluate(
+              `document.activeElement===document.querySelector('.qap-matching-entity .qap-state-summary')`,
+            ),
+            true,
+          );
+          await pressTab();
+          assert.equal(
+            await evaluate(
               `document.activeElement===document.querySelector('[data-device="device_0001"] .qap-state-summary')`,
+            ),
+            true,
+          );
+          await pressTab(true);
+          assert.equal(
+            await evaluate(
+              `document.activeElement===document.querySelector('.qap-matching-entity .qap-state-summary')`,
             ),
             true,
           );
@@ -4679,7 +4716,7 @@ test(
           );
           assert.equal(
             await evaluate(
-              `(()=>{const rows=[...document.querySelectorAll('.qap-state-row')];return rows.every((row,i)=>!i||row.getBoundingClientRect().top>=rows[i-1].getBoundingClientRect().bottom-1);})()`,
+              `(()=>{const rows=[...document.querySelector('.qap-state-list-virtual').children];return rows.every((row,i)=>!i||row.getBoundingClientRect().top>=rows[i-1].getBoundingClientRect().bottom-1);})()`,
             ),
             true,
           );
@@ -4690,6 +4727,7 @@ test(
             await evaluate(`document.querySelector('.qap-matching-entities').children.length`),
             1,
           );
+          await pressTab();
           await evaluate(`document.querySelector('.qap-body').scrollTop=50000`);
           await settleRows();
           assert.equal(
@@ -4702,7 +4740,7 @@ test(
               `document.activeElement===document.querySelector('[data-device="device_0001"] .qap-state-summary')`,
             ),
             true,
-            "Tab mounts the next row from the expansion button",
+            "Tab mounts the next row from the matching entity",
           );
           await evaluate(`document.querySelector('.qap-body').scrollTop=50000`);
           await settleRows();

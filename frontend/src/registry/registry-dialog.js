@@ -204,7 +204,7 @@ export function createRegistryDialog({
     if (!entity) return;
 
     const modal = createDialogElement(t(`${labels}.details`));
-    navigation = { key: `${kind}:${entityId}`, open: () => restoreDetails(entityId) };
+    navigation = { key: `${kind}:${entityId}`, open: () => restoreDetails(entityId, kind) };
     navigationChanged();
     modal.classList.add("qap-state-modal");
     modal.dataset.id = entityId;

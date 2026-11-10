@@ -1057,19 +1057,23 @@ qap-button.qap-button.qap-linkish,
   text-align: left;
 }
 /* Preview rows inside Edit filter retain their existing presentation. */
-.qap-states > .qap-state-list > .qap-state-row {
+:is(.qap-states > .qap-state-list, .qap-matching-entities) > .qap-state-row {
   background: var(--qap-surface-raised);
   border-color: var(--qap-card-border);
   border-radius: var(--qap-radius-card);
 }
-.qap-states > .qap-state-list > .qap-state-row > .qap-state-summary {
+:is(.qap-states > .qap-state-list, .qap-matching-entities) > .qap-state-row > .qap-state-summary {
   min-height: var(--qap-row-height);
   padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
 }
-.qap-states > .qap-state-list > .qap-state-row > .qap-state-summary:is(:hover, :active) {
+:is(.qap-states > .qap-state-list, .qap-matching-entities)
+  > .qap-state-row
+  > .qap-state-summary:is(:hover, :active) {
   background: var(--qap-surface-hover);
 }
-.qap-states > .qap-state-list > .qap-state-row > .qap-state-summary:focus-visible {
+:is(.qap-states > .qap-state-list, .qap-matching-entities)
+  > .qap-state-row
+  > .qap-state-summary:focus-visible {
   outline-offset: -2px;
 }
 .qap-filter-panel[hidden],
@@ -1510,20 +1514,15 @@ qap-button.qap-filter-reuse-option::part(label) {
   min-height: 32px;
 }
 .qap-matching-entities {
-  padding: 4px 12px 12px;
+  padding: 12px;
   max-height: 240px;
   overflow: auto;
   overflow-wrap: anywhere;
+  background: var(--card-background-color);
 }
-.qap-matching-entity {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding-block: 4px;
+.qap-matching-attribute {
+  color: var(--qap-muted);
   font-size: var(--ha-font-size-s, 12px);
-}
-.qap-matching-entity small {
-  flex-basis: 100%;
 }
 .qap-state-icon {
   display: grid;
