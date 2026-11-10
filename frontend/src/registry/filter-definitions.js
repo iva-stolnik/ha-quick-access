@@ -73,7 +73,7 @@ export function fieldOperators(field) {
     "equals",
     "not_equals",
     "any_of",
-    ...(["id", "domain", "label"].includes(field) ? [] : ["exists"]),
+    ...(["id", "domain"].includes(field) ? [] : ["exists"]),
   ];
 }
 
@@ -220,6 +220,11 @@ export function validCondition(condition, kind) {
         "operator",
         "value",
         ...(item.field === "attribute" ? ["attribute"] : []),
+        ...(item.field === "smart" &&
+        item.value === "low_battery" &&
+        Object.hasOwn(item, "threshold")
+          ? ["threshold"]
+          : []),
       ]) ||
       !(scope === "devices" ? DEVICE_FIELDS : ENTITY_FIELDS).includes(item.field) ||
       !FILTER_OPERATORS.includes(item.operator)
@@ -231,7 +236,15 @@ export function validCondition(condition, kind) {
     )
       return false;
     if (item.field === "smart")
-      return item.operator === "equals" && SMART_FILTERS[scope].includes(item.value);
+      return (
+        item.operator === "equals" &&
+        SMART_FILTERS[scope].includes(item.value) &&
+        (!Object.hasOwn(item, "threshold") ||
+          (typeof item.threshold === "number" &&
+            Number.isFinite(item.threshold) &&
+            item.threshold >= 0 &&
+            item.threshold <= 100))
+      );
     if (item.operator === "exists") return item.value === true;
     if (["greater_than", "less_than"].includes(item.operator))
       return typeof item.value === "number" && Number.isFinite(item.value);

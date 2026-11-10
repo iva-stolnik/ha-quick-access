@@ -1,9 +1,37 @@
 import { getDeviceName } from "../devices/device-formatting.js";
+import { ICON_THEME_COLORS, normalizeIconColor } from "../utils/icons.js";
 
 let attributesViewerPromise;
 // HA's "language" time format keeps the language's hour cycle; "system" uses
 // the browser's and is resolved when formatting.
 const HOUR12_BY_TIME_FORMAT = { 12: true, 24: false };
+
+function labelTextColor(element, color) {
+  let rgb;
+  if (color.startsWith("#")) {
+    const hex =
+      color.length <= 5
+        ? [...color.slice(1, 4)].map((digit) => digit.repeat(2)).join("")
+        : color.slice(1, 7);
+    rgb = [0, 2, 4].map((index) => parseInt(hex.slice(index, index + 2), 16));
+  } else {
+    const resolved = globalThis.getComputedStyle?.(element).backgroundColor || "";
+    const match = resolved.match(
+      /^rgba?\(\s*(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)/,
+    );
+    if (!match) return "#ffffff";
+    rgb = match.slice(1, 4).map(Number);
+  }
+  // Match HA's choice of whichever text color has the higher WCAG contrast.
+  const linear = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
+}
 
 function loadAttributesViewer() {
   return (attributesViewerPromise ??= Promise.all([
@@ -76,6 +104,7 @@ export function createRegistryDialog({
     setIconButtonLabel,
     focusWhenReady,
     removeLocalizedElement,
+    replaceLocalizedChildren,
     createDialogElement,
     showDialogElement,
     cleanupDialogElement,
@@ -107,6 +136,10 @@ export function createRegistryDialog({
   function registryDetailRowValue(kind, id, field) {
     const details = registryDetails(kind, id);
     if (!field) return details.value;
+    if (field === "device_class") {
+      const value = details.attributes.device_class;
+      return typeof value === "string" ? value.trim() : "";
+    }
     const value = details.record?.[field];
     const available = value != null && value !== "";
     if (!available) return t("common.unavailable");
@@ -117,6 +150,50 @@ export function createRegistryDialog({
         : dateTimeFormatter().format(date);
     }
     return value;
+  }
+
+  function registryLabels(kind, id) {
+    const registries = getRegistries();
+    const hass = getHass();
+    const devices = registries?.devices || hass?.devices;
+    const record =
+      kind === "devices" ? devices?.[id] : (registries?.entities || hass?.entities)?.[id];
+    const device = kind === "states" ? devices?.[record?.device_id] : null;
+    const labels = registries?.labels || hass?.labels;
+    const ids = new Set([...(record?.labels || []), ...(device?.labels || [])]);
+    return [...ids].flatMap((id) => {
+      const label = labels?.[id];
+      const name = typeof label?.name === "string" ? label.name.trim() : "";
+      return name ? [{ id, name, color: normalizeIconColor(label.color) }] : [];
+    });
+  }
+
+  function updateDialogLabels(row, labels) {
+    const container = row.querySelector(".qap-state-dialog-values");
+    const existing = new Map(
+      [...container.children].map((value) => [value.dataset.labelId, value]),
+    );
+    const values = labels.map(({ id, name, color }) => {
+      const value = existing.get(id) || node("span", "qap-state-dialog-value");
+      value.dataset.labelId = id;
+      l10n.text(value, name);
+      if (color) {
+        value.style.setProperty(
+          "--ha-label-background-color",
+          ICON_THEME_COLORS.has(color) ? `var(--${color}-color)` : color,
+        );
+      } else {
+        value.style.removeProperty("--ha-label-background-color");
+        value.style.removeProperty("--primary-text-color");
+      }
+      return value;
+    });
+    replaceLocalizedChildren(container, ...values);
+    // Resolve theme colors after the values inherit the dialog's CSS variables.
+    values.forEach((value, index) => {
+      const color = labels[index].color;
+      if (color) value.style.setProperty("--primary-text-color", labelTextColor(value, color));
+    });
   }
 
   function finalizeStateDialog(active) {
@@ -154,7 +231,36 @@ export function createRegistryDialog({
     }
     const name = details.name;
     l10n.text(stateDialog.querySelector(".qap-state-dialog-name"), name);
+    const labels = registryLabels(kind, entityId);
+    const optionalFields = kind === "devices" ? ["labels"] : ["labels", "device_class"];
+    for (const field of optionalFields) {
+      const value =
+        field === "labels" ? labels.length : registryDetailRowValue(kind, entityId, field);
+      const className = `qap-state-dialog-${field.replaceAll("_", "-")}`;
+      let row = stateDialog.querySelector(`.${className}`);
+      if (value && !row) {
+        row = node("div", `qap-state-dialog-state-line ${className}`);
+        row.dataset.field = field;
+        row.append(
+          node(
+            "span",
+            "qap-state-dialog-state-label",
+            t(`${kind === "devices" ? "devices" : "entities"}.${field}`),
+          ),
+          field === "labels"
+            ? node("div", "qap-state-dialog-values")
+            : node("span", "qap-state-dialog-value"),
+        );
+        stateDialog
+          .querySelector(".qap-state-dialog-attributes")
+          .insertBefore(row, stateDialog.querySelector(".qap-state-dialog-section-title"));
+      } else if (!value) removeLocalizedElement(row);
+    }
     for (const row of stateDialog.querySelectorAll(".qap-state-dialog-state-line")) {
+      if (row.dataset.field === "labels") {
+        updateDialogLabels(row, labels);
+        continue;
+      }
       l10n.text(row.querySelector(".qap-state-dialog-value"), () =>
         registryDetailRowValue(kind, entityId, row.dataset.field),
       );

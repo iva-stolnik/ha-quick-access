@@ -86,7 +86,7 @@ for (const [filter, id, initial, matching, attributes] of [
     modal.querySelector(".qap-state-dialog-info").click();
     assert.equal(moreInfo, id);
     assert.equal(
-      env.server.requests.length,
+      env.server.requests.filter((request) => !request.type?.startsWith("config/")).length,
       0,
       "filtering and details never mutate profiles or invoke updates",
     );
@@ -198,6 +198,39 @@ test("entity details format timestamps, refresh independently of state and local
   provider.publish({});
   await env.tick(250);
   assert.deepEqual(values(), ["Nedostupno", "Nedostupno", "Nedostupno"]);
+});
+
+test("entity details show device class only when present and follow live changes", async () => {
+  const env = environment();
+  installLocaleFetch(env);
+  const provider = statesProvider(env);
+  const id = "sensor.temperature";
+  const state = { entity_id: id, state: "21", attributes: {} };
+  env.status.hass.states = { [id]: state };
+  await openEntityStates(env);
+  await clickAndFlush(env.document.body.querySelector(".qap-state-summary"));
+  const modal = env.document.body.querySelector(".qap-state-modal");
+  assert.equal(modal.querySelector(".qap-state-dialog-device-class"), null);
+
+  async function publishDeviceClass(deviceClass) {
+    provider.publish({ [id]: { ...state, attributes: { device_class: deviceClass } } });
+    await env.tick(250);
+  }
+  await publishDeviceClass("temperature");
+  const row = modal.querySelector(".qap-state-dialog-device-class");
+  assert.ok(modal.querySelector(".qap-state-dialog-attributes").contains(row));
+  assert.equal(row.querySelector(".qap-state-dialog-state-label").textContent, "Device class");
+  assert.equal(row.querySelector(".qap-state-dialog-value").textContent, "temperature");
+  await changeLanguage(env, "hr");
+  assert.equal(row.querySelector(".qap-state-dialog-state-label").textContent, "Klasa uređaja");
+
+  await publishDeviceClass("humidity");
+  assert.equal(modal.querySelector(".qap-state-dialog-device-class"), row);
+  assert.equal(row.querySelector(".qap-state-dialog-value").textContent, "humidity");
+  for (const value of ["", "  ", null, undefined]) {
+    await publishDeviceClass(value);
+    assert.equal(modal.querySelector(".qap-state-dialog-device-class"), null);
+  }
 });
 
 const TIMESTAMP = "2026-11-06T09:12:34.123456+00:00";

@@ -1,8 +1,18 @@
+import { DEFAULT_LOW_BATTERY_THRESHOLD } from "../entities/entity-search.js";
+
 /** Presentation for condition row labels and icons. */
 export function conditionSummary(condition, t) {
   const field = `${t(`filters.field_${condition.field}`)}${condition.field === "attribute" ? ` [${JSON.stringify(condition.attribute)}]` : ""}`;
   const operator = condition.field === "smart" ? "" : t(`filters.op_${condition.operator}`);
-  const value = condition.operator === "exists" ? "" : JSON.stringify(condition.value);
+  const value =
+    condition.field === "smart" && condition.value === "low_battery"
+      ? t("filters.low_battery_below", {
+          percentage:
+            condition.threshold === undefined ? DEFAULT_LOW_BATTERY_THRESHOLD : condition.threshold,
+        })
+      : condition.operator === "exists"
+        ? ""
+        : JSON.stringify(condition.value);
   return { field, operator, value, text: [field, operator, value].filter(Boolean).join(" ") };
 }
 

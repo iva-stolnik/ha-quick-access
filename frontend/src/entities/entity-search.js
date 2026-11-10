@@ -1,6 +1,6 @@
 import { formattedEntityName } from "./entity-formatting.js";
 
-const LOW_BATTERY_THRESHOLD = 20;
+export const DEFAULT_LOW_BATTERY_THRESHOLD = 20;
 const NUMERIC_STATE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 /** Approximate substring matching for picker terms, without another search dependency. */
@@ -24,8 +24,11 @@ export function entitySearchTermMatches(text, term) {
   return false;
 }
 
-function isLowBattery(state, domain) {
+function isLowBattery(state, domain, threshold = DEFAULT_LOW_BATTERY_THRESHOLD) {
   if (
+    !Number.isFinite(threshold) ||
+    threshold < 0 ||
+    threshold > 100 ||
     domain !== "sensor" ||
     state.attributes?.device_class !== "battery" ||
     state.attributes?.unit_of_measurement !== "%"
@@ -35,7 +38,7 @@ function isLowBattery(state, domain) {
   const value = String(state.state).trim();
   if (!NUMERIC_STATE.test(value)) return false;
   const percentage = Number(value);
-  return Number.isFinite(percentage) && percentage >= 0 && percentage < LOW_BATTERY_THRESHOLD;
+  return Number.isFinite(percentage) && percentage >= 0 && percentage < threshold;
 }
 
 export function entityMatches(state, view, searchTerm, searchNames, hass) {
@@ -50,7 +53,7 @@ export function entityMatches(state, view, searchTerm, searchNames, hass) {
       if (state.state !== view.filter) return false;
       break;
     case "low_battery":
-      if (!isLowBattery(state, domain)) return false;
+      if (!isLowBattery(state, domain, view.threshold)) return false;
       break;
     case "updates":
       if (domain !== "update" || state.state !== "on") return false;

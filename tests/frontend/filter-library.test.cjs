@@ -209,6 +209,226 @@ test("device entity filters batch affected devices, keep explanations collapsed,
   );
 });
 
+test("matching entity state updates preserve connected rows and keyboard focus", async () => {
+  const env = environment();
+  const provider = statesProvider(env);
+  installDeviceRegistries(env);
+  env.status.hass.entities = {
+    "sensor.first": { device_id: "device_a" },
+    "sensor.second": { device_id: "device_a" },
+  };
+  env.status.hass.states = Object.fromEntries(
+    Object.keys(env.status.hass.entities).map((id) => [
+      id,
+      { entity_id: id, state: "unknown", attributes: {} },
+    ]),
+  );
+  await openDevices(env);
+  await clickAndFlush(
+    env.document.body
+      .querySelectorAll(".qap-state-tab")
+      .find((chip) => chip.dataset.domain === "entity_issues"),
+  );
+  await env.tick(250);
+  await clickAndFlush(env.document.body.querySelector(".qap-matching-count"));
+  const explanation = env.document.body.querySelector(".qap-matching-entities");
+  const [first, second] = explanation.children;
+  const summary = second.querySelector(".qap-state-summary");
+  const stateIcon = second.querySelector("qap-state-icon");
+  summary.focus();
+  provider.publish({
+    ...env.status.hass.states,
+    "sensor.second": {
+      entity_id: "sensor.second",
+      state: "unavailable",
+      attributes: { friendly_name: "Updated name" },
+    },
+  });
+  await env.tick(250);
+  assert.equal(summary.isConnected, true);
+  assert.equal(env.document.activeElement, summary);
+  assert.equal(explanation.children[0], first);
+  assert.equal(explanation.children[1], second);
+  assert.equal(second.querySelector(".qap-state-value").textContent, "unavailable");
+  assert.equal(second.querySelector(".qap-state-name").textContent, "Updated name");
+  assert.equal(second.querySelector("qap-state-icon"), stateIcon);
+  assert.equal(stateIcon.stateObj, env.status.hass.states["sensor.second"]);
+
+  provider.publish({
+    ...env.status.hass.states,
+    "sensor.first": { entity_id: "sensor.first", state: "on", attributes: {} },
+  });
+  await env.tick(250);
+  assert.equal(first.isConnected, false);
+  assert.equal(explanation.children.length, 1);
+  assert.equal(explanation.children[0], second);
+  assert.equal(summary.isConnected, true);
+  assert.equal(env.document.activeElement, summary);
+
+  provider.publish({
+    ...env.status.hass.states,
+    "sensor.first": { entity_id: "sensor.first", state: "unknown", attributes: {} },
+  });
+  await env.tick(250);
+  assert.equal(explanation.children.length, 2);
+  assert.equal(explanation.children[1], second);
+  assert.equal(env.document.activeElement, summary);
+  await clickAndFlush(env.document.body.querySelector(".qap-matching-count"));
+  assert.equal(explanation.children.length, 0);
+  await clickAndFlush(env.document.body.querySelector(".qap-matching-count"));
+  assert.equal(explanation.children.length, 2);
+  assert.equal(explanation.children[1].isConnected, true);
+});
+
+for (const { focusedIndex, removedIndices, nextIndex } of [
+  { focusedIndex: 0, removedIndices: [0], nextIndex: 1 },
+  { focusedIndex: 0, removedIndices: [0, 1], nextIndex: 2 },
+  { focusedIndex: 1, removedIndices: [0, 1], nextIndex: 2 },
+  { focusedIndex: 2, removedIndices: [2], nextIndex: null },
+]) {
+  test(`removing focused matching entity ${focusedIndex} transfers focus after removing ${removedIndices}`, async () => {
+    const env = environment();
+    const provider = statesProvider(env);
+    installDeviceRegistries(env);
+    const entityIds = ["sensor.first", "sensor.second", "sensor.third"];
+    env.status.hass.entities = Object.fromEntries(
+      entityIds.map((id) => [id, { device_id: "device_a" }]),
+    );
+    env.status.hass.states = Object.fromEntries(
+      entityIds.map((id) => [id, { entity_id: id, state: "unknown", attributes: {} }]),
+    );
+    await openDevices(env);
+    await clickAndFlush(
+      env.document.body
+        .querySelectorAll(".qap-state-tab")
+        .find((chip) => chip.dataset.domain === "entity_issues"),
+    );
+    await env.tick(250);
+    const count = env.document.body.querySelector(".qap-matching-count");
+    await clickAndFlush(count);
+    const explanation = env.document.body.querySelector(".qap-matching-entities");
+    const rows = [...explanation.children];
+    const summaries = rows.map((row) => row.querySelector(".qap-state-summary"));
+    summaries[focusedIndex].focus();
+
+    const nextStates = { ...env.status.hass.states };
+    for (const index of removedIndices) {
+      const id = entityIds[index];
+      nextStates[id] = { ...nextStates[id], state: "on" };
+    }
+    provider.publish(nextStates);
+    await env.tick(250);
+
+    assert.equal(summaries[focusedIndex].isConnected, false);
+    assert.ok(
+      env.document.activeElement === (nextIndex === null ? count : summaries[nextIndex]),
+      "focus moves to the next matching entity or back to the count button",
+    );
+    assert.equal(env.document.activeElement.isConnected, true);
+    assert.deepEqual(
+      explanation.children,
+      rows.filter((_, index) => !removedIndices.includes(index)),
+      "remaining matching rows are reused in place",
+    );
+    assert.equal(env.document.body.querySelector(".qap-matching-count"), count);
+    assert.equal(count.attributes["aria-expanded"], "true");
+  });
+}
+
+test("matching entity condition attributes refresh without replacing focused controls", async () => {
+  const env = environment();
+  const provider = statesProvider(env);
+  const { profileFilters, group, rule } = await filterDefinitions(env);
+  savedProfile(env).filters = clone(profileFilters());
+  savedProfile(env).filters.devices.push({
+    id: "battery_attribute",
+    name: "Battery attribute",
+    icon: "mdi:battery-low",
+    hidden: false,
+    condition: group([
+      {
+        type: "entities",
+        quantifier: "any",
+        condition: group([{ ...rule("attribute", "less_than", 20), attribute: "battery" }]),
+      },
+    ]),
+  });
+  savedProfile(env).filters.defaults = { devices: "battery_attribute" };
+  installDeviceRegistries(env);
+  env.status.hass.entities = { "sensor.battery": { device_id: "device_a" } };
+  env.status.hass.states = {
+    "sensor.battery": {
+      entity_id: "sensor.battery",
+      state: "on",
+      attributes: { battery: 12, unrelated: "hidden" },
+    },
+  };
+  await openDevices(env);
+  await env.tick(250);
+  await clickAndFlush(env.document.body.querySelector(".qap-matching-count"));
+  const matching = env.document.body.querySelector(".qap-matching-entity");
+  const summary = matching.querySelector(".qap-state-summary");
+  const attribute = matching.querySelector(".qap-matching-attribute");
+  assert.equal(attribute.textContent, "battery: 12");
+  summary.focus();
+  provider.publish({
+    "sensor.battery": {
+      ...env.status.hass.states["sensor.battery"],
+      attributes: { battery: 8, unrelated: "still hidden" },
+    },
+  });
+  await env.tick(250);
+  assert.equal(summary.isConnected, true);
+  assert.equal(env.document.activeElement, summary);
+  assert.equal(matching.querySelector(".qap-matching-attribute"), attribute);
+  assert.equal(attribute.textContent, "battery: 8");
+  assert.equal(matching.querySelectorAll(".qap-matching-attribute").length, 1);
+});
+
+test("matching entity names refresh in place when HA naming context changes without state updates", async () => {
+  const env = environment();
+  installDeviceRegistries(env);
+  env.status.hass.entities = { "sensor.issue": { device_id: "device_a", name: "Before" } };
+  env.status.hass.states = {
+    "sensor.issue": { entity_id: "sensor.issue", state: "unknown", attributes: {} },
+  };
+  env.status.hass.formatEntityName = () => "Before";
+  await openDevices(env);
+  await clickAndFlush(
+    env.document.body
+      .querySelectorAll(".qap-state-tab")
+      .find((chip) => chip.dataset.domain === "entity_issues"),
+  );
+  await env.tick(250);
+  await clickAndFlush(env.document.body.querySelector(".qap-matching-count"));
+  const row = env.document.body.querySelector(".qap-matching-entity");
+  const name = row.querySelector(".qap-state-name");
+  const summary = row.querySelector(".qap-state-summary");
+  summary.focus();
+  assert.equal(name.textContent, "Before");
+  env.status.hass.formatEntityName = () => "After";
+  await env.tick(15000);
+  await env.tick(250);
+  assert.equal(name.textContent, "After");
+  assert.equal(summary.isConnected, true);
+  assert.equal(env.document.activeElement, summary);
+
+  env.status.hass.formatEntityName = (state) =>
+    `${env.status.hass.entities[state.entity_id].name} (${env.status.hass.locale.language})`;
+  env.status.hass.entities = { "sensor.issue": { device_id: "device_a", name: "Registry name" } };
+  env.status.hass.locale = { language: "hr" };
+  await env.tick(15000);
+  await env.tick(250);
+  assert.equal(name.textContent, "Registry name (hr)");
+  env.status.hass.entities = { "sensor.issue": { device_id: "device_a", name: "Renamed" } };
+  env.status.hass.locale = { language: "en" };
+  await env.tick(15000);
+  await env.tick(250);
+  assert.equal(name.textContent, "Renamed (en)");
+  assert.equal(summary.isConnected, true);
+  assert.equal(env.document.activeElement, summary);
+});
+
 test("matching entities reuse entity rows and details, refresh live, and restore focus and history in Devices", async () => {
   const env = navigationEnvironment();
   const provider = statesProvider(env);

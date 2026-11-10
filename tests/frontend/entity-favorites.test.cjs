@@ -160,7 +160,10 @@ test("delayed Favorites acknowledgements cannot restore a remotely deleted activ
   assert.equal(env.fab().hidden, false);
   assert.equal(env.fab().attributes["aria-label"], "Set up Quick Access");
   assert.deepEqual(env.server.data("test-user").profiles, []);
-  assert.equal(env.server.requests.length, 2);
+  assert.equal(
+    env.server.requests.filter((request) => !request.type?.startsWith("config/")).length,
+    2,
+  );
 });
 
 test("saved favorites filter searches and removal updates the list without closing details", async () => {

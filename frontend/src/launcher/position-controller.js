@@ -277,7 +277,6 @@ export function createPositionController({
         if (!hold || hold.cancelled) return;
         hold.held = true;
         fab.classList.add("qap-holding");
-        showMenu(false, event.pointerType || "mouse");
       }, HOLD_MS);
       fab.setPointerCapture(event.pointerId);
     });
@@ -306,6 +305,7 @@ export function createPositionController({
         applyPosition();
         hideMenu();
       } else if (held && dragged && !invalid) savePosition();
+      else if (held && !dragged && !invalid) showMenu(false, event.pointerType || "mouse");
       if (!cancelled && !held && !dragged && !invalid) openDialog();
     };
     fab.addEventListener("pointerup", (event) => finish(event));

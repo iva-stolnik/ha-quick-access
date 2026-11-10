@@ -54,6 +54,7 @@ class Rule(TypedDict):
     operator: str
     value: str | bool | float | list[str | bool | float]
     attribute: NotRequired[str]
+    threshold: NotRequired[float]
 
 
 class ConditionGroup(TypedDict):
@@ -218,13 +219,16 @@ def valid_condition(condition: object, kind: str) -> bool:
                 or not isinstance(item.get("field"), str)
                 or item["field"] not in (DEVICE_FIELDS if scope == "devices" else ENTITY_FIELDS)
                 or not isinstance(item.get("operator"), str) or item["operator"] not in OPERATORS
-                or set(item) != {"type", "field", "operator", "value"} | ({"attribute"} if item["field"] == "attribute" else set())):
+                or set(item) != {"type", "field", "operator", "value"}
+                | ({"attribute"} if item["field"] == "attribute" else set())
+                | ({"threshold"} if item["field"] == "smart" and item.get("value") == "low_battery" and "threshold" in item else set())):
             return False
         if item["field"] == "attribute" and not (isinstance(item["attribute"], str) and 0 < len(item["attribute"]) <= 100):
             return False
         value, operator = item["value"], item["operator"]
         if item["field"] == "smart":
-            return operator == "equals" and isinstance(value, str) and value in SMART_FILTERS[scope]
+            return (operator == "equals" and isinstance(value, str) and value in SMART_FILTERS[scope]
+                    and ("threshold" not in item or type(item["threshold"]) in (int, float) and 0 <= item["threshold"] <= 100))
         if operator == "exists":
             return value is True
         if operator in ("greater_than", "less_than"):

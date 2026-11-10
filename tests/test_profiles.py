@@ -169,6 +169,35 @@ class ProfileValidationTests(unittest.TestCase):
                 with self.subTest(kind=kind, color=color), self.assertRaises(profiles.ProfileError):
                     profiles.validate_profile(value)
 
+    def test_low_battery_thresholds_are_optional_bounded_and_specific_to_battery_rules(self):
+        value = saved_filter_profile()
+        condition = value["filters"]["states"][-1]["condition"]
+        battery = {"type": "rule", "field": "smart", "operator": "equals", "value": "low_battery"}
+        condition["conditions"] = [battery]
+        self.assertEqual(profiles.validate_profile(value), value)
+        for threshold in (0, 10, 15, 15.5, 20, 100):
+            battery["threshold"] = threshold
+            with self.subTest(threshold=threshold):
+                self.assertEqual(profiles.validate_profile(value), value)
+        for threshold in (None, True, False, "15", [], {}, -1, 100.01, float("nan"), float("inf")):
+            battery["threshold"] = threshold
+            with self.subTest(threshold=threshold), self.assertRaises(profiles.ProfileError):
+                profiles.validate_profile(value)
+        battery["threshold"] = 15
+        for field, expected in (("smart", "unknown"), ("state", "low_battery")):
+            battery.update(field=field, value=expected)
+            with self.subTest(field=field), self.assertRaises(profiles.ProfileError):
+                profiles.validate_profile(value)
+        battery.update(field="smart", value="low_battery")
+        value["filters"]["devices"].append(value["filters"]["states"].pop())
+        value["settings"]["links"][-1]["filterKind"] = "devices"
+        with self.assertRaises(profiles.ProfileError):
+            profiles.validate_profile(value)
+        device_condition = value["filters"]["devices"][-1]["condition"]
+        device_condition["conditions"] = [{"type": "entities", "quantifier": "any",
+                                           "condition": {"type": "group", "operator": "and", "conditions": [battery]}}]
+        self.assertEqual(profiles.validate_profile(value), value)
+
     def test_not_filter_groups_validate_and_preserve_the_existing_limits(self):
         system = [{"id": "all", "name": "All", "hidden": False}, {"id": "favorites", "name": "Favorites", "hidden": False}]
         rule = {"type": "rule", "field": "name", "operator": "equals", "value": "Excluded"}
@@ -434,6 +463,18 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         value = saved_filter_profile()
         value["filters"]["states"][-1]["color"] = "#8e24aa"
         value["filters"]["devices"][-1]["color"] = "teal"
+        await self.mutate(value=value)
+        self.alice.send_error.assert_not_called()
+        user = self.manager.user("alice")
+        self.assertEqual(user.data["profiles"][0]["filters"], value["filters"])
+        self.assertEqual(self.hass.data["test_storage"][user.store.key]["profiles"][0]["filters"], value["filters"])
+        user.data = None
+        self.assertEqual((await user.async_load())["profiles"][0]["filters"], value["filters"])
+
+    async def test_low_battery_threshold_round_trips_through_profile_storage(self):
+        value = saved_filter_profile()
+        value["filters"]["states"][-1]["condition"]["conditions"] = [
+            {"type": "rule", "field": "smart", "operator": "equals", "value": "low_battery", "threshold": 15.5}]
         await self.mutate(value=value)
         self.alice.send_error.assert_not_called()
         user = self.manager.user("alice")

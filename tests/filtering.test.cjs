@@ -190,6 +190,118 @@ function fixture() {
   };
 }
 
+// Columns after the value describe Exists, Equals, Contains, Any of, > 0 and < 20.
+const valueCases = [
+  ["missing", {}, false, false, false, false, false, false],
+  ["undefined", { value: undefined }, false, false, false, false, false, false],
+  ["null", { value: null }, false, false, false, false, false, false],
+  ["empty array", { value: [] }, false, false, false, false, false, false],
+  ["empty object", { value: {} }, false, false, false, false, false, false],
+  ["array", { value: ["match", 10] }, true, true, true, true, true, true],
+  ["object", { value: { key: "match" } }, true, false, false, false, false, false],
+  ["empty string", { value: "" }, true, false, false, true, false, false],
+  ["whitespace", { value: "   " }, true, false, false, false, false, false],
+  ["false", { value: false }, true, false, false, true, false, false],
+  ["zero", { value: 0 }, true, false, false, true, false, true],
+  ["string", { value: "match" }, true, true, true, true, false, false],
+  ["unknown", { value: "unknown" }, true, false, false, false, false, false],
+  ["unavailable", { value: "unavailable" }, true, false, false, false, false, false],
+  ["number", { value: 10 }, true, false, false, false, true, true],
+  ["numeric string", { value: "10" }, true, false, false, false, true, true],
+];
+
+test("scalar and array comparisons preserve string, numeric and membership semantics", () => {
+  for (const value of ["", "   ", false, 0, "unknown", "unavailable", "Match", 10]) {
+    assert.equal(evaluation.compareValue(value, "equals", value), true);
+    assert.equal(evaluation.compareValue(value, "not_equals", value), false);
+    assert.equal(evaluation.compareValue(value, "any_of", [value]), true);
+  }
+  assert.equal(evaluation.compareValue("Match", "equals", "match"), true);
+  assert.equal(evaluation.compareValue("10", "equals", 10), true);
+  assert.equal(evaluation.compareValue(["match", "other"], "not_equals", "match"), false);
+  assert.equal(evaluation.compareValue(["other"], "not_equals", "match"), true);
+});
+
+test("metadata, areas, attributes and states normalize presence consistently through groups", () => {
+  const { group, rule } = definitions;
+  const deviceFields = [
+    "manufacturer",
+    "model",
+    "model_id",
+    "serial_number",
+    "sw_version",
+    "hw_version",
+    "entry_type",
+    "area",
+  ];
+  const entityFields = [
+    "manufacturer",
+    "model",
+    "platform",
+    "hidden_by",
+    "entity_category",
+    "device_class",
+    "attribute",
+    "state",
+    "area",
+  ];
+  for (const [kind, fields] of [
+    ["devices", deviceFields],
+    ["states", entityFields],
+  ]) {
+    for (const field of fields) {
+      for (const [name, value, present, equals, contains, anyOf, greater, less] of valueCases) {
+        const { states, context } = fixture();
+        const state = states["sensor.a"];
+        const registry = context.entities[state.entity_id];
+        const device = context.devices.one;
+        delete device.area_id;
+        const target =
+          kind === "devices" || ["manufacturer", "model"].includes(field)
+            ? device
+            : ["attribute", "device_class"].includes(field)
+              ? state.attributes
+              : field === "state"
+                ? state
+                : registry;
+        const key = field === "area" ? "area_id" : field === "attribute" ? "test" : field;
+        delete target[key];
+        if (Object.hasOwn(value, "value")) target[key] = value.value;
+        const record = kind === "devices" ? device : state;
+        const matches = (condition) =>
+          evaluation.compileFilter(condition, kind, context).evaluate(record, states).match;
+        for (const [operator, expected, match] of [
+          ["exists", true, present],
+          ["equals", "match", equals],
+          ["not_equals", "match", present && !equals],
+          ["contains", "at", contains],
+          ["any_of", ["match", false, 0, ""], anyOf],
+          ["greater_than", 0, greater],
+          ["less_than", 20, less],
+        ]) {
+          const condition = {
+            ...rule(field, operator, expected),
+            ...(field === "attribute" ? { attribute: key } : {}),
+          };
+          assert.equal(definitions.validCondition(clone(group([condition])), kind), true);
+          assert.equal(matches(group([condition])), match, `${kind} ${field} ${name}: ${operator}`);
+        }
+        const exists = {
+          ...rule(field, "exists", true),
+          ...(field === "attribute" ? { attribute: key } : {}),
+        };
+        assert.equal(
+          matches(group([exists], "not")),
+          !present,
+          `${kind} ${field} ${name}: NOT Exists`,
+        );
+        assert.equal(matches(group([exists, rule("id", "equals", "absent")], "or")), present);
+        assert.equal(matches(group([exists, rule("id", "exists", true)], "and")), present);
+      }
+    }
+  }
+});
+
 test("filter groups compose nested AND/OR, preserve numeric and boolean semantics, and reject missing values", () => {
   const { group, rule } = definitions;
   const { states, context } = fixture();
@@ -228,7 +340,7 @@ test("filter groups compose nested AND/OR, preserve numeric and boolean semantic
     );
   }
   states["sensor.a"].attributes.null_value = null;
-  assert.equal(matches(group([attribute("null_value", "exists", true)])), true);
+  assert.equal(matches(group([attribute("null_value", "exists", true)])), false);
   assert.equal(matches(group([attribute("null_value", "not_equals", "unknown")])), false);
   assert.equal(
     evaluation
@@ -300,6 +412,48 @@ test("device ANY/ALL groups apply AND to the same entity and combine separate gr
   );
 });
 
+test("nested device ANY/ALL conditions share missing-value and NOT Exists semantics", () => {
+  const { group, rule } = definitions;
+  for (const [name, value, present, equals] of valueCases) {
+    for (const both of [false, true]) {
+      const { states, context } = fixture();
+      states["sensor.a"].attributes = value;
+      states["sensor.b"].attributes = both ? value : { value: null };
+      for (const [operator, expected, firstMatch] of [
+        ["exists", true, present],
+        ["equals", "match", equals],
+        ["not_equals", "match", present && !equals],
+      ]) {
+        const condition = { ...rule("attribute", operator, expected), attribute: "value" };
+        for (const quantifier of ["any", "all"]) {
+          const nested = { type: "entities", quantifier, condition: group([condition]) };
+          const saved = JSON.parse(JSON.stringify(group([nested])));
+          assert.equal(definitions.validCondition(saved, "devices"), true);
+          const result = evaluation
+            .compileFilter(saved, "devices", context)
+            .evaluate(context.devices.one, states);
+          assert.equal(
+            result.match,
+            firstMatch && (both || quantifier === "any"),
+            `${name} ${operator} ${quantifier} both=${both}`,
+          );
+          nested.condition = group(
+            [{ ...rule("attribute", "exists", true), attribute: "value" }],
+            "not",
+          );
+          assert.equal(
+            evaluation
+              .compileFilter(group([nested]), "devices", context)
+              .evaluate(context.devices.one, states).match,
+            quantifier === "all" ? !present : !present || !both,
+            `${name} NOT Exists ${quantifier} both=${both}`,
+          );
+        }
+      }
+    }
+  }
+});
+
 test("NOT groups match only when no child matches, including nested and device entity groups", () => {
   const { group, rule } = definitions;
   const { states, context } = fixture();
@@ -357,6 +511,91 @@ test("registry metadata inherits device area, labels and manufacturer and reuses
   );
 });
 
+test("Low Battery thresholds validate only on battery smart rules and preserve legacy defaults", () => {
+  const { group, rule, validCondition } = definitions;
+  const battery = rule("smart", "equals", "low_battery");
+  assert.equal(validCondition(group([battery]), "states"), true);
+  for (const threshold of [0, 10, 15, 15.5, 20, 100])
+    assert.equal(validCondition(group([{ ...battery, threshold }]), "states"), true);
+  for (const threshold of [undefined, null, true, false, "15", [], {}, -1, 100.01, NaN, Infinity])
+    assert.equal(validCondition(group([{ ...battery, threshold }]), "states"), false);
+  for (const condition of [
+    rule("smart", "equals", "unknown"),
+    rule("state", "less_than", 15),
+    rule("attribute", "equals", "low_battery"),
+  ])
+    assert.equal(validCondition(group([{ ...condition, threshold: 15 }]), "states"), false);
+  assert.equal(validCondition(group([{ ...battery, threshold: 15 }]), "devices"), false);
+});
+
+test("Low Battery uses custom thresholds for entities and nested device entity matches", () => {
+  const { group, rule } = definitions;
+  const { context } = fixture();
+  for (const threshold of [undefined, 0, 10, 15, 15.5, 100]) {
+    const condition = group([
+      {
+        ...rule("smart", "equals", "low_battery"),
+        ...(threshold === undefined ? {} : { threshold }),
+      },
+    ]);
+    const compiled = evaluation.compileFilter(condition, "states", context);
+    for (const percentage of [-1, 0, 9, 10, 14.9, 15, 15.5, 19, 20, 99.9, 100, 101, "unknown"])
+      assert.equal(
+        compiled.evaluate(
+          entity("sensor.battery", String(percentage), {
+            device_class: "battery",
+            unit_of_measurement: "%",
+          }),
+          {},
+        ).match,
+        typeof percentage === "number" && percentage >= 0 && percentage < (threshold ?? 20),
+        `${percentage} below ${threshold ?? 20}`,
+      );
+    assert.equal(
+      compiled.evaluate(
+        entity("sensor.voltage", "5", {
+          device_class: "battery",
+          unit_of_measurement: "V",
+        }),
+        {},
+      ).match,
+      false,
+    );
+  }
+  const states = {
+    "sensor.a": entity("sensor.a", "10", { device_class: "battery", unit_of_measurement: "%" }),
+    "sensor.b": entity("sensor.b", "15", { device_class: "battery", unit_of_measurement: "%" }),
+  };
+  for (const [quantifier, threshold, expected] of [
+    ["any", 10, false],
+    ["any", 15, true],
+    ["all", 15, false],
+    ["all", 16, true],
+  ]) {
+    const condition = group([
+      {
+        type: "entities",
+        quantifier,
+        condition: group([{ ...rule("smart", "equals", "low_battery"), threshold }]),
+      },
+    ]);
+    assert.equal(definitions.validCondition(condition, "devices"), true);
+    const result = evaluation
+      .compileFilter(condition, "devices", context)
+      .evaluate(context.devices.one, states);
+    assert.equal(result.match, expected);
+    if (quantifier === "any" && expected) assert.deepEqual([...result.entities], ["sensor.a"]);
+  }
+  const t = (key, parameters = {}) =>
+    english[key].replace(/\{(\w+)\}/g, (_, name) => parameters[name]);
+  for (const threshold of [undefined, 10, 15.5])
+    assert.equal(
+      presentation.conditionSummary({ ...rule("smart", "equals", "low_battery"), threshold }, t)
+        .text,
+      `Smart filter Low battery below ${threshold ?? 20}%`,
+    );
+});
+
 test("records without labels treat label like other missing values", () => {
   const { group, rule } = definitions;
   const { states, context } = fixture();
@@ -372,6 +611,46 @@ test("records without labels treat label like other missing values", () => {
   // Same as a missing area: "not equals" never matches an absent value.
   delete context.devices.one.area_id;
   assert.equal(matches(group([rule("area", "not_equals", "room")]), "sensor.b"), false);
+});
+
+test("device and entity labels expose Exists and preserve membership and inherited labels", () => {
+  const { group, rule } = definitions;
+  assert.ok(definitions.fieldOperators("label").includes("exists"));
+  for (const kind of ["devices", "states"]) {
+    for (const [labels, present] of [
+      [{}, false],
+      [{ labels: undefined }, false],
+      [{ labels: null }, false],
+      [{ labels: [] }, false],
+      [{ labels: ["critical", "other"] }, true],
+    ]) {
+      const { states, context } = fixture();
+      const registry = context.entities["sensor.a"];
+      const device = context.devices.one;
+      delete registry.labels;
+      Object.assign(kind === "devices" ? device : registry, labels);
+      const record = kind === "devices" ? device : states["sensor.a"];
+      const matches = (condition) =>
+        evaluation.compileFilter(condition, kind, context).evaluate(record, states).match;
+      for (const [operator, value, expected] of [
+        ["exists", true, present],
+        ["equals", "critical", present],
+        ["not_equals", "critical", false],
+        ["not_equals", "missing", present],
+        ["any_of", ["critical"], present],
+      ]) {
+        const condition = group([rule("label", operator, value)]);
+        assert.equal(definitions.validCondition(clone(condition), kind), true);
+        assert.equal(matches(condition), expected, `${kind} ${JSON.stringify(labels)} ${operator}`);
+      }
+      assert.equal(matches(group([rule("label", "exists", true)], "not")), !present);
+      if (kind === "states") {
+        device.labels = ["inherited"];
+        assert.equal(matches(group([rule("label", "exists", true)])), true);
+        assert.equal(matches(group([rule("label", "equals", "inherited")])), true);
+      }
+    }
+  }
 });
 
 test("saved defaults reference their own collection", () => {

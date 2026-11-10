@@ -31,8 +31,13 @@ test("FAB menu hides Move button for touch and shows it for mouse and keyboard",
   for (const pointerType of ["mouse", "touch", "pen", "touch"]) {
     fabPointer(env, "pointerdown", 320, 720, pointerType);
     await env.tick(480);
+    assert.equal(menu.hidden, true, "holding must keep the menu hidden");
+    assert.equal(env.fab().attributes["aria-expanded"], "false");
+    await env.tick(480);
+    assert.equal(menu.hidden, true, "continuing to hold must keep the menu hidden");
     fabPointer(env, "pointerup", 320, 720, pointerType);
     assert.equal(menu.hidden, false);
+    assert.equal(env.fab().attributes["aria-expanded"], "true");
     assert.deepEqual(
       visibleActions(),
       pointerType === "touch" ? [reset, reload] : [move, reset, reload],
@@ -62,6 +67,32 @@ test("FAB menu hides Move button for touch and shows it for mouse and keyboard",
         }),
       );
       assert.equal(focused, expected);
+    }
+  }
+});
+
+test("FAB drag and cancelled holds never open the menu", async () => {
+  const env = await startProfiles(environment());
+  const menu = env.document.body.querySelector("#qap-menu");
+  for (const pointerType of ["mouse", "touch", "pen"]) {
+    for (const finish of ["pointerup", "pointercancel", "lostpointercapture"]) {
+      fabPointer(env, "pointerdown", 320, 720, pointerType);
+      await env.tick(480);
+      assert.equal(menu.hidden, true);
+      fabPointer(env, "pointermove", 160, 420, pointerType);
+      assert.equal(menu.hidden, true);
+      // Returning to the starting point still counts as a drag.
+      fabPointer(env, "pointermove", 320, 720, pointerType);
+      fabPointer(env, finish, 320, 720, pointerType);
+      assert.equal(menu.hidden, true);
+      assert.equal(env.document.body.querySelector("qap-dialog"), null);
+    }
+    for (const finish of ["pointercancel", "lostpointercapture"]) {
+      fabPointer(env, "pointerdown", 320, 720, pointerType);
+      await env.tick(480);
+      fabPointer(env, finish, 320, 720, pointerType);
+      assert.equal(menu.hidden, true);
+      assert.equal(env.document.body.querySelector("qap-dialog"), null);
     }
   }
 });

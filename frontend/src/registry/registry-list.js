@@ -513,7 +513,7 @@ export function mountRegistryList(
         entry.expanded = false;
         if (entry.explanation) {
           replaceLocalizedChildren(entry.explanation);
-          delete entry.explanation.dataset.signature;
+          entry.matchingRows.clear();
         }
       }
     }
@@ -852,6 +852,7 @@ export function mountRegistryList(
       expanded: false,
     };
     if (devices && !preview) {
+      entry.matchingRows = new Map();
       entry.explanation = node("div", "qap-state-list qap-matching-entities");
       entry.explanation.setAttribute("role", "list");
       l10n.attribute(entry.explanation, "aria-label", t("entities.title"));
@@ -912,49 +913,85 @@ export function mountRegistryList(
     let contentChanged = false;
     if (entry.explanation.hidden) {
       if (entry.explanation.children.length) replaceLocalizedChildren(entry.explanation);
-      delete entry.explanation.dataset.signature;
+      entry.matchingRows.clear();
     } else {
-      const signature = JSON.stringify(
-        [...ids].map((entityId) => [
-          entityId,
-          currentEntityStates[entityId]?.state,
-          currentEntityStates[entityId]?.attributes,
-        ]),
-      );
-      if (entry.explanation.dataset.signature !== signature) {
+      // Render only attributes referenced by the condition, not the full state.
+      const attributes = new Set();
+      const collect = (item) => {
+        if (item.type === "group") item.conditions.forEach(collect);
+        else if (item.type === "entities") collect(item.condition);
+        else if (item.field === "attribute") attributes.add(item.attribute);
+      };
+      const definition =
+        view.filter === "temporary"
+          ? view.temporary
+          : getFilters()[kind].find((item) => item.id === view.filter);
+      if (definition?.condition) collect(definition.condition);
+      let focusTarget = null;
+      for (const [entityId, matching] of entry.matchingRows) {
+        if (ids.has(entityId) && currentEntityStates[entityId]) continue;
+        if (matching.row.contains(document.activeElement)) {
+          let next = matching.row.nextElementSibling;
+          while (
+            next &&
+            (!ids.has(next.dataset.entity) || !currentEntityStates[next.dataset.entity])
+          )
+            next = next.nextElementSibling;
+          focusTarget =
+            next?.querySelector(".qap-state-summary") ||
+            (entry.explain.disabled ? entry.summary : entry.explain);
+        }
+        removeLocalizedElement(matching.row);
+        entry.matchingRows.delete(entityId);
         contentChanged = true;
-        entry.explanation.dataset.signature = signature;
-        replaceLocalizedChildren(entry.explanation);
-        for (const entityId of ids) {
-          const state = currentEntityStates[entityId];
-          if (!state) continue;
-          const matching = createStateRow(state, true, "states");
+      }
+      let position = 0;
+      for (const entityId of ids) {
+        const state = currentEntityStates[entityId];
+        if (!state) continue;
+        let matching = entry.matchingRows.get(entityId);
+        if (!matching) {
+          matching = createStateRow(state, true, "states");
           matching.row.classList.add("qap-matching-entity");
           matching.summary.addEventListener("keydown", entry.onTab);
-          updateEntityRow(matching, state);
-          // Render only attributes referenced by the condition, not the full state.
-          const attributes = new Set();
-          const collect = (item) => {
-            if (item.type === "group") item.conditions.forEach(collect);
-            else if (item.type === "entities") collect(item.condition);
-            else if (item.field === "attribute") attributes.add(item.attribute);
-          };
-          const definition =
-            view.filter === "temporary"
-              ? view.temporary
-              : getFilters()[kind].find((item) => item.id === view.filter);
-          if (definition?.condition) collect(definition.condition);
-          for (const attribute of attributes)
-            matching.name.parentElement.append(
-              node(
-                "small",
-                "qap-matching-attribute",
-                `${attribute}: ${JSON.stringify(state?.attributes?.[attribute]) ?? "—"}`,
-              ),
-            );
-          entry.explanation.append(matching.row);
+          matching.attributeRows = new Map();
+          entry.matchingRows.set(entityId, matching);
+          contentChanged = true;
         }
+        // HA naming and locale context can change without a new entity state.
+        const { lastName, lastValue } = matching;
+        updateEntityRow(matching, state);
+        if (matching.lastName !== lastName || matching.lastValue !== lastValue)
+          contentChanged = true;
+        for (const [attribute, row] of matching.attributeRows) {
+          if (attributes.has(attribute)) continue;
+          removeLocalizedElement(row);
+          matching.attributeRows.delete(attribute);
+          contentChanged = true;
+        }
+        for (const attribute of attributes) {
+          let row = matching.attributeRows.get(attribute);
+          if (!row) {
+            row = node("small", "qap-matching-attribute");
+            matching.attributeRows.set(attribute, row);
+            matching.name.parentElement.append(row);
+          }
+          const text = `${attribute}: ${JSON.stringify(state.attributes?.[attribute]) ?? "—"}`;
+          if (row.textContent !== text) {
+            row.textContent = text;
+            contentChanged = true;
+          }
+        }
+        if (entry.explanation.children[position] !== matching.row) {
+          entry.explanation.insertBefore(
+            matching.row,
+            entry.explanation.children[position] || null,
+          );
+          contentChanged = true;
+        }
+        position++;
       }
+      focusTarget?.focus({ preventScroll: true });
     }
     // Newly mounted counts are measured next frame. Stable collapsed rows do
     // no layout reads on scroll; resize and expansion invalidate this cache.
@@ -1129,6 +1166,8 @@ export function mountRegistryList(
 
   function openDetails(id, trigger, detailsKind = kind) {
     if (disposed) return;
+    if (!devices || detailsKind === "states") ensureFilterRegistries();
+    deviceRegistries.requireLabels();
     details.open(
       id,
       trigger || detailsTrigger(id, detailsKind) || searchInput,

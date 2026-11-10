@@ -26,6 +26,7 @@ import { createItemFeedback } from "../ui/item-feedback.ts";
 import { createManagementRow, overflowButton, moveActions, moveById } from "../ui/editable-list.js";
 import { conditionSummary, conditionIcon } from "./filter-presentation.js";
 import { createEntitySelectorSource } from "../entities/entity-selector.ts";
+import { DEFAULT_LOW_BATTERY_THRESHOLD } from "../entities/entity-search.js";
 
 const LINKED_SHORTCUT_PREVIEW_LIMIT = 3;
 // UI choice only; persisted device entity conditions use type: "entities".
@@ -995,6 +996,7 @@ export function createFilterEditor({
       }
       condition.field = field.value;
       delete condition.attribute;
+      delete condition.threshold;
       condition.operator = "equals";
       condition.value = condition.field === "smart" ? SMART_FILTERS[scope][0] : "";
       if (condition.field === "attribute") condition.attribute = "";
@@ -1101,10 +1103,35 @@ export function createFilterEditor({
         if (numeric) condition.value = value.value.trim() ? Number(value.value) : null;
         else if (condition.operator === "any_of")
           condition.value = value.value.split(",").map((item) => item.trim());
-        else condition.value = value.value;
+        else {
+          const smartChanged = condition.field === "smart" && condition.value !== value.value;
+          condition.value = value.value;
+          if (smartChanged) {
+            delete condition.threshold;
+            rerender("value");
+          }
+        }
         refreshPreview();
       });
       row.append(value.element);
+      if (condition.field === "smart" && condition.value === "low_battery") {
+        const threshold = forms.input(
+          t("filters.battery_threshold"),
+          "number",
+          String(
+            condition.threshold === undefined
+              ? DEFAULT_LOW_BATTERY_THRESHOLD
+              : (condition.threshold ?? ""),
+          ),
+          { min: "0", max: "100", step: "any", required: true },
+        );
+        threshold.onChange(() => {
+          condition.threshold = threshold.value.trim() ? Number(threshold.value) : null;
+          refreshPreview();
+        });
+        row.append(threshold.element);
+      }
+      return { field, operator, value };
     }
     return { field, operator };
   }

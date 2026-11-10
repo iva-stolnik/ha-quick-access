@@ -1664,6 +1664,22 @@ qap-button.qap-filter-reuse-option::part(label) {
   font-size: var(--ha-font-size-m, 14px);
   font-weight: var(--ha-font-weight-medium, 500);
 }
+.qap-state-dialog-values {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--ha-space-2, 8px);
+  min-width: 0;
+}
+.qap-state-dialog-labels .qap-state-dialog-value {
+  box-sizing: border-box;
+  max-width: 100%;
+  background: var(
+    --ha-label-background-color,
+    rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.15)
+  );
+  color: var(--primary-text-color, var(--qap-text));
+}
 .qap-state-dialog-state-copy {
   margin-inline-start: auto;
 }
@@ -1689,7 +1705,7 @@ qap-button.qap-filter-reuse-option::part(label) {
   max-width: 100%;
 }
 .qap-state-modal[data-kind="devices"]
-  .qap-state-dialog-state-line:not([data-field=""])
+  .qap-state-dialog-state-line:not([data-field=""]):not([data-field="labels"])
   .qap-state-dialog-value {
   background: transparent;
   border-radius: 0;

@@ -25,6 +25,244 @@ const {
   profileMenuIn,
 } = require("./harness.cjs");
 
+for (const kind of ["devices", "states"]) {
+  test(`${kind} Label offers Exists, previews absent labels and saves without schema changes`, async () => {
+    const env = environment();
+    installDeviceRegistries(env, [
+      deviceFixture("empty", { labels: [] }),
+      deviceFixture("missing", { labels: undefined }),
+      deviceFixture("null", { labels: null }),
+      deviceFixture("labeled", { labels: ["critical"] }),
+    ]);
+    env.status.hass.entities = {
+      "sensor.empty": { device_id: "empty", labels: [] },
+      "sensor.missing": {},
+      "sensor.undefined": { labels: undefined },
+      "sensor.null": { labels: null },
+      "sensor.labeled": { labels: ["critical"] },
+      "sensor.inherited": { device_id: "labeled", labels: [] },
+    };
+    env.status.hass.states = Object.fromEntries(
+      Object.keys(env.status.hass.entities).map((entity_id) => [
+        entity_id,
+        { entity_id, state: "on", attributes: {} },
+      ]),
+    );
+    env.status.hass.callWS = async ({ type }) => {
+      assert.equal(type, "config/label_registry/list");
+      return [{ label_id: "critical", name: "Critical" }];
+    };
+    await (kind === "devices" ? openDevices(env) : openEntityStates(env));
+    const panel = await editNewFilter(env, "Label presence");
+    await setFilterField(panel, "Condition", "label");
+    assert.ok(
+      filterField(panel, "Comparison").options.some(
+        (option) => option.value === "exists" && option.label === "Exists",
+      ),
+    );
+    await setFilterField(panel, "Comparison", "exists");
+    assert.equal(panel.querySelector(".qap-filter-value"), null);
+    assert.equal(
+      panel.querySelector(".qap-filter-preview").textContent,
+      kind === "devices" ? "1 matching device" : "2 matching entities",
+    );
+    await clickAndFlush(panel.querySelector(".qap-filter-preview-action"));
+    assert.equal(
+      panel.querySelector(".qap-filter-matches").querySelectorAll(".qap-state-row").length,
+      kind === "devices" ? 1 : 2,
+    );
+    const logic = panel.querySelector(".qap-filter-logic");
+    await clickAndFlush(logic);
+    await clickAndFlush(profileMenuIn(env).querySelector(".qap-filter-logic-not"));
+    assert.equal(
+      panel.querySelector(".qap-filter-preview").textContent,
+      kind === "devices" ? "3 matching devices" : "4 matching entities",
+    );
+    await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+    const definitions = await filterDefinitions(env);
+    const saved = savedProfile(env).filters;
+    assert.equal(definitions.validFilters(saved), true);
+    assert.deepEqual(
+      saved[kind].at(-1).condition,
+      clone(definitions.group([definitions.rule("label", "exists", true)], "not")),
+    );
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    await filterAction(env, panel, "Label presence", "edit");
+    assert.equal(filterField(panel, "Comparison").value, "exists");
+    assert.equal(panel.querySelector(".qap-filter-logic").textContent, "NONE");
+  });
+}
+
+test("attribute previews exclude absent values and retain falsy and blank values", async () => {
+  const env = environment();
+  env.status.hass.entities = {};
+  env.status.hass.states = Object.fromEntries(
+    [
+      {},
+      { value: undefined },
+      { value: null },
+      { value: [] },
+      { value: {} },
+      { value: "" },
+      { value: "   " },
+      { value: false },
+      { value: 0 },
+      { value: "match" },
+      { value: ["match"] },
+      { value: { key: true } },
+    ].map((attributes, index) => [
+      `sensor.${index}`,
+      { entity_id: `sensor.${index}`, state: "on", attributes },
+    ]),
+  );
+  await openEntityStates(env);
+  const panel = await editNewFilter(env, "Attribute presence");
+  await setFilterField(panel, "Condition", "attribute");
+  await setFilterField(panel, "Attribute name", "value");
+  for (const [operator, value, count] of [
+    ["exists", undefined, 7],
+    ["equals", "match", 2],
+    ["not_equals", "match", 5],
+  ]) {
+    await setFilterField(panel, "Comparison", operator);
+    if (value !== undefined) await setFilterField(panel, "Value", value);
+    assert.equal(
+      panel.querySelector(".qap-filter-preview").textContent,
+      `${count} matching entities`,
+    );
+  }
+  await setFilterField(panel, "Comparison", "exists");
+  await clickAndFlush(panel.querySelector(".qap-filter-logic"));
+  await clickAndFlush(profileMenuIn(env).querySelector(".qap-filter-logic-not"));
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "5 matching entities");
+});
+
+test("Low Battery thresholds update previews, persist, reopen and apply temporarily", async () => {
+  const env = environment();
+  env.status.hass.states = Object.fromEntries(
+    [5, 10, 15, 19, 20].map((percentage) => [
+      `sensor.battery_${percentage}`,
+      {
+        entity_id: `sensor.battery_${percentage}`,
+        state: String(percentage),
+        attributes: { device_class: "battery", unit_of_measurement: "%" },
+      },
+    ]),
+  );
+  await openEntityStates(env);
+  const panel = await editNewFilter(env, "My low battery");
+  await setFilterField(panel, "Condition", "smart");
+  await setFilterField(panel, "Value", "low_battery");
+  assert.equal(filterField(panel, "Battery below (%)").value, "20");
+  assert.equal(panel.querySelector(".qap-filter-preview").textContent, "4 matching entities");
+  for (const [threshold, expected] of [
+    ["10", "1 matching entity"],
+    ["15", "2 matching entities"],
+    ["15.5", "3 matching entities"],
+  ]) {
+    await setFilterField(panel, "Battery below (%)", threshold);
+    assert.equal(panel.querySelector(".qap-filter-preview").textContent, expected);
+    assert.equal(
+      panel.querySelector(".qap-filter-rule-value").textContent,
+      `Low battery below ${threshold}%`,
+    );
+  }
+  await setFilterField(panel, "Value", "low_battery");
+  assert.equal(filterField(panel, "Battery below (%)").value, "15.5");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  const saved = savedProfile(env).filters.states.at(-1);
+  assert.deepEqual(saved.condition.conditions[0], {
+    type: "rule",
+    field: "smart",
+    operator: "equals",
+    value: "low_battery",
+    threshold: 15.5,
+  });
+  assert.equal(env.document.body.querySelector(".qap-count").textContent, "3 entities");
+  await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+  await filterAction(env, panel, "My low battery", "edit");
+  assert.equal(filterField(panel, "Battery below (%)").value, "15.5");
+  await setFilterField(panel, "Battery below (%)", "10");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Apply temporarily"));
+  assert.equal(env.document.body.querySelector(".qap-count").textContent, "1 entity");
+  assert.equal(savedProfile(env).filters.states.at(-1).condition.conditions[0].threshold, 15.5);
+});
+
+test("Low Battery rejects invalid thresholds and removes thresholds when switching conditions", async () => {
+  const env = environment();
+  await openEntityStates(env);
+  const panel = await editNewFilter(env, "Battery validation");
+  await setFilterField(panel, "Condition", "smart");
+  await setFilterField(panel, "Value", "low_battery");
+  const requestsBeforeSave = env.server.requests.length;
+  for (const invalid of ["", "-1", "101", "NaN"]) {
+    await setFilterField(panel, "Battery below (%)", invalid);
+    await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+    assert.equal(env.server.requests.length, requestsBeforeSave);
+    assert.equal(panel.querySelector(".qap-field-error").hidden, false);
+    assert.equal(panel.querySelector(".qap-filter-preview-action").disabled, true);
+  }
+  await setFilterField(panel, "Battery below (%)", "15");
+  assert.equal(panel.querySelector(".qap-field-error").hidden, true);
+  await setFilterField(panel, "Value", "unknown");
+  assert.ok(
+    !panel.querySelectorAll("qap-input").some((input) => input.label === "Battery below (%)"),
+  );
+  await setFilterField(panel, "Value", "low_battery");
+  assert.equal(filterField(panel, "Battery below (%)").value, "20");
+  await setFilterField(panel, "Battery below (%)", "10");
+  await setFilterField(panel, "Condition", "state");
+  await setFilterField(panel, "Value", "unknown");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  assert.deepEqual(savedProfile(env).filters.states.at(-1).condition.conditions[0], {
+    type: "rule",
+    field: "state",
+    operator: "equals",
+    value: "unknown",
+  });
+});
+
+test("legacy Low Battery filters keep their default and nested device rules allow custom thresholds", async () => {
+  const env = environment();
+  await openEntityStates(env);
+  await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+  const panel = env.document.body.querySelector(".qap-filter-panel");
+  await filterAction(env, panel, "Low battery", "edit");
+  assert.equal(filterField(panel, "Battery below (%)").value, "20");
+  await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
+  assert.ok(
+    !Object.hasOwn(
+      savedProfile(env).filters.states.find((item) => item.id === "low_battery").condition
+        .conditions[0],
+      "threshold",
+    ),
+  );
+
+  const devicesEnv = environment();
+  installDeviceRegistries(devicesEnv);
+  devicesEnv.status.hass.entities = { "sensor.battery": { device_id: "device_a" } };
+  devicesEnv.status.hass.states = {
+    "sensor.battery": {
+      entity_id: "sensor.battery",
+      state: "12",
+      attributes: { device_class: "battery", unit_of_measurement: "%" },
+    },
+  };
+  await openDevices(devicesEnv);
+  const devicesPanel = await editNewFilter(devicesEnv, "Device batteries", "Thermostat");
+  await setFilterField(devicesPanel, "Condition", "entities");
+  const nested = devicesPanel.querySelector(".qap-filter-rule");
+  await setFilterField(nested, "Condition", "smart");
+  await setFilterField(nested, "Value", "low_battery");
+  await setFilterField(nested, "Battery below (%)", "10");
+  assert.equal(devicesPanel.querySelector(".qap-filter-preview").textContent, "0 matching devices");
+  await setFilterField(nested, "Battery below (%)", "15");
+  assert.equal(devicesPanel.querySelector(".qap-filter-preview").textContent, "1 matching device");
+  await clickAndFlush(buttons(devicesPanel).find((item) => item.textContent === "Save"));
+  const saved = savedProfile(devicesEnv).filters.devices.at(-1).condition.conditions[0];
+  assert.equal(saved.condition.conditions[0].threshold, 15);
+});
+
 test("filter values reuse shared dropdowns and persist multiple canonical IDs", async () => {
   const env = environment();
   installDeviceRegistries(env);
@@ -433,7 +671,7 @@ test("Device entities choices enforce depth and preserve condition limits when r
 });
 
 for (const action of ["Save", "Apply temporarily"]) {
-  test(`filter logic badge selects AND/OR/NOT without a Match selector (${action})`, async () => {
+  test(`filter logic badge selects AND/OR/NONE without a Match selector (${action})`, async () => {
     const env = environment();
     env.status.hass.entities = {};
     env.status.hass.devices = {};
@@ -460,10 +698,10 @@ for (const action of ["Save", "Apply temporarily"]) {
         .querySelectorAll(".qap-field")
         .some((field) => field.querySelector("label")?.textContent === "Match"),
     );
-    for (const [operator, count] of [
-      ["or", 2],
-      ["and", 2],
-      ["not", 1],
+    for (const [operator, label, count] of [
+      ["or", "OR", 2],
+      ["and", "AND", 2],
+      ["not", "NONE", 1],
     ]) {
       await dispatchAndFlush(
         trigger,
@@ -474,12 +712,13 @@ for (const action of ["Save", "Apply temporarily"]) {
       assert.ok(menu.classList.contains("qap-filter-logic-menu"));
       assert.deepEqual(
         buttons(menu).map((item) => item.textContent),
-        ["AND", "OR", "NOT"],
+        ["AND", "OR", "NONE"],
       );
       assert.equal(contents.hidden, false, "opening the logic menu does not collapse the group");
       await clickAndFlush(menu.querySelector(`.qap-filter-logic-${operator}`));
       assert.equal(profileMenuIn(env), null);
-      assert.equal(trigger.textContent, operator.toUpperCase());
+      assert.equal(trigger.textContent, label);
+      assert.equal(trigger.getAttribute("aria-label"), `Match: ${label}`);
       assert.equal(trigger.getAttribute("aria-expanded"), "false");
       assert.equal(group.dataset.operator, operator);
       assert.equal(filterField(panel, "Value"), input);
@@ -497,7 +736,7 @@ for (const action of ["Save", "Apply temporarily"]) {
       );
       await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
       await filterAction(env, panel, "Logic", "edit");
-      assert.equal(panel.querySelector(".qap-filter-logic").textContent, "NOT");
+      assert.equal(panel.querySelector(".qap-filter-logic").textContent, "NONE");
     } else {
       assert.equal(env.server.requests.length, 0);
       assert.equal(env.document.body.querySelectorAll(".qap-state-row").length, 1);

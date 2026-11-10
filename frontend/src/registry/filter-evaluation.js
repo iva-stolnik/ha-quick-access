@@ -20,10 +20,16 @@ function equal(actual, expected) {
   if (typeof expected === "boolean") return actual === expected || actual === String(expected);
   return ["string", "number", "boolean"].includes(typeof actual) && text(actual) === text(expected);
 }
+function hasValue(value) {
+  if (value === MISSING || value === undefined || value === null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (Object.prototype.toString.call(value) === "[object Object]")
+    return Object.keys(value).length > 0;
+  return true;
+}
 export function compareValue(actual, operator, expected) {
-  if (actual === MISSING || actual === undefined) return false;
+  if (!hasValue(actual)) return false;
   if (operator === "exists") return true;
-  if (actual === null) return false;
   if (operator === "not_equals") return !compareValue(actual, "equals", expected);
   if (Array.isArray(actual)) return actual.some((value) => compareValue(value, operator, expected));
   if (operator === "equals") return equal(actual, expected);
@@ -56,13 +62,10 @@ function fieldValue(record, field, attribute, kind, context) {
     case "domain":
       return record.entity_id.split(".")[0];
     case "area":
-      return (
-        registry?.area_id || (device && effectiveDeviceArea(device, context.devices)) || MISSING
-      );
+      return registry?.area_id ?? device?.area_id ?? effectiveDeviceArea(device, context.devices);
     case "label": {
-      // No labels is a missing value, like a missing area or attribute.
       const labels = [...new Set([...(registry?.labels || []), ...(device?.labels || [])])];
-      return labels.length ? labels : MISSING;
+      return labels;
     }
     case "manufacturer":
     case "model":
@@ -117,7 +120,13 @@ export function compileFilter(condition, kind, context) {
         match:
           scope === "devices"
             ? deviceMatches(record, { filter: item.value }, "", context)
-            : entityMatches(record, { filter: item.value }, "", names, context.hass),
+            : entityMatches(
+                record,
+                { filter: item.value, threshold: item.threshold },
+                "",
+                names,
+                context.hass,
+              ),
         entities: new Set(),
       });
     return (record) => ({
