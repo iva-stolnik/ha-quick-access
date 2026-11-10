@@ -1029,7 +1029,7 @@ export function createFilterEditor({
       rerender("operator");
       refreshPreview();
     });
-    row.append(operator.element);
+    if (condition.field !== "smart") row.append(operator.element);
     if (condition.operator !== "exists") {
       const numeric = ["greater_than", "less_than"].includes(condition.operator);
       if (condition.field === "id" && scope === "states" && condition.operator !== "contains") {

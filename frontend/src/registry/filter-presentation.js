@@ -1,7 +1,7 @@
 /** Presentation for condition row labels and icons. */
 export function conditionSummary(condition, t) {
   const field = `${t(`filters.field_${condition.field}`)}${condition.field === "attribute" ? ` [${JSON.stringify(condition.attribute)}]` : ""}`;
-  const operator = t(`filters.op_${condition.operator}`);
+  const operator = condition.field === "smart" ? "" : t(`filters.op_${condition.operator}`);
   const value = condition.operator === "exists" ? "" : JSON.stringify(condition.value);
   return { field, operator, value, text: [field, operator, value].filter(Boolean).join(" ") };
 }

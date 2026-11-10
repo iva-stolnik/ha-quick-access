@@ -348,7 +348,15 @@ for (const field of ["name", "smart"]) {
     assert.equal(panel.querySelectorAll(".qap-filter-group").length, 1);
     assert.equal(panel.querySelectorAll(".qap-filter-rule").length, 1);
     assert.equal(filterField(panel, "Condition").value, field);
-    assert.equal(filterField(panel, "Comparison").value, "equals");
+    if (field === "smart") {
+      assert.equal(
+        panel
+          .querySelectorAll(".qap-field")
+          .some((item) => item.querySelector("label")?.textContent === "Comparison"),
+        false,
+      );
+      assert.equal(panel.querySelector(".qap-filter-rule-operator").textContent, "");
+    } else assert.equal(filterField(panel, "Comparison").value, "equals");
     assert.equal(filterField(panel, "Value").value, field === "smart" ? "assigned" : "");
     assert.equal(env.document.activeElement, filterField(panel, "Condition"));
     await clickAndFlush(buttons(panel).find((item) => item.textContent === "Save"));
