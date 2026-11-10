@@ -8,13 +8,13 @@ Quick Access adds a floating launcher to Home Assistant. Open **dashboards**, **
 
 <p>
   <a href="docs/images/launcher-closed.png">
-    <img src="docs/images/launcher-closed.png" width="280" alt="Quick Access launcher over Home Assistant, showing floating button">
+    <img src="docs/images/launcher-closed.png" width="260" alt="Quick Access launcher over Home Assistant, showing floating button">
   </a>
   <a href="docs/images/launcher.png">
-    <img src="docs/images/launcher.png" width="280" alt="Quick Access launcher over Home Assistant, showing shortcut groups and a grid of custom shortcuts">
+    <img src="docs/images/launcher.png" width="260" alt="Quick Access launcher over Home Assistant, showing shortcut groups and a grid of custom shortcuts">
   </a>
   <a href="docs/images/floating-menu.png">
-    <img src="docs/images/floating-menu.png" width="280" alt="Quick Access launcher menu, reset position and reload page buttons">
+    <img src="docs/images/floating-menu.png" width="260" alt="Quick Access launcher menu, reset position and reload page buttons">
   </a>
 </p>
 
@@ -42,13 +42,13 @@ Entity Explorer and Device Explorer with matching entities:
 
 <p>
   <a href="docs/images/entity-explorer.png">
-    <img src="docs/images/entity-explorer.png" width="280" alt="Entity Explorer with a search field, filter presets and favorite entities with live states">
+    <img src="docs/images/entity-explorer.png" width="260" alt="Entity Explorer with a search field, filter presets and favorite entities with live states">
   </a>
   <a href="docs/images/entity-details.png">
-    <img src="docs/images/entity-details.png" width="280" alt="Entity details for a light showing its ID, state, timestamps and YAML attributes with copy controls">
+    <img src="docs/images/entity-details.png" width="260" alt="Entity details for a light showing its ID, state, timestamps and YAML attributes with copy controls">
   </a>
   <a href="docs/images/device-explorer.png">
-    <img src="docs/images/device-explorer.png" width="280" alt="Device Explorer filtered to devices with entity issues, with matching unknown entities expanded">
+    <img src="docs/images/device-explorer.png" width="260" alt="Device Explorer filtered to devices with entity issues, with matching unknown entities expanded">
   </a>
 </p>
 
@@ -157,10 +157,10 @@ Under **Shortcut type**, choose **Home Assistant path** to open a dashboard or a
 
 <p>
   <a href="docs/images/create-shortcut.png">
-    <img src="docs/images/create-shortcut.png" width="280" alt="Quick Access shortcut form with name, icon, color, type, URL path and group settings">
+    <img src="docs/images/create-shortcut.png" width="260" alt="Quick Access shortcut form with name, icon, color, type, URL path and group settings">
   </a>
   <a href="docs/images/shortcut-types.JPG">
-    <img src="docs/images/shortcut-types.JPG" width="280" alt="Shortcut type menu listing Home Assistant path, Entity Explorer, Device Explorer, Saved filter, Scene and External URL">
+    <img src="docs/images/shortcut-types.JPG" width="260" alt="Shortcut type menu listing Home Assistant path, Entity Explorer, Device Explorer, Saved filter, Scene and External URL">
   </a>
 </p>
 
@@ -171,7 +171,7 @@ Open the launcher's settings (the gear icon), select **Groups**, then select a g
 Under **Arrange shortcuts**, press and hold a shortcut to drag it into a new position. Tap a shortcut to edit it, or use **Add** to create one in the group. Select **Save** to apply the group's layout and order.
 
 <a href="docs/images/edit-group.png">
-  <img src="docs/images/edit-group.png" width="280" alt="Edit group dialog for Favorites showing grid columns and rows, Show names, and a shortcut arrangement preview with an Add tile">
+  <img src="docs/images/edit-group.png" width="260" alt="Edit group dialog for Favorites showing grid columns and rows, Show names, and a shortcut arrangement preview with an Add tile">
 </a>
 
 ### Display rules
@@ -181,7 +181,7 @@ Open the launcher's settings (the gear icon) and select **Display rules** to cho
 Enter one page path per line, starting with `/`. In the example below, `/config/automation/*` hides the button on all automation subpages, while `/lovelace/cameras` hides it on that exact page. Use the **Add** buttons under **Current page** to add the current path or its subpage wildcard, then select **Save**. Display rules belong to the selected profile and sync to devices using it.
 
 <a href="docs/images/display-rules.png">
-  <img src="docs/images/display-rules.png" width="280" alt="Display rules set to hide the floating button on automation subpages and the cameras dashboard, with buttons to add the current page or its subpages">
+  <img src="docs/images/display-rules.png" width="260" alt="Display rules set to hide the floating button on automation subpages and the cameras dashboard, with buttons to add the current page or its subpages">
 </a>
 
 ### Custom filters
@@ -191,7 +191,7 @@ Open **Entity Explorer** or **Device Explorer** and use the filter icon to creat
 The example below matches entities with a battery below **20%**, or entities that have the **battery** label and a state below **40**. Expand the matching-entity count to preview the results, then select **Save** to keep the filter in your profile or **Apply temporarily** to use it without saving. To open a saved filter from the launcher, add a shortcut with the **Saved filter** type.
 
 <a href="docs/images/edit-filter.png">
-  <img src="docs/images/edit-filter.png" width="280" alt="Filter editor showing a Low battery condition and nested AND/OR groups">
+  <img src="docs/images/edit-filter.png" width="260" alt="Filter editor showing a Low battery condition and nested AND/OR groups">
 </a>
 
 </details>
