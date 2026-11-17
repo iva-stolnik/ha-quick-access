@@ -53,7 +53,7 @@ If the button is hidden, open **Quick Access** in the Home Assistant sidebar and
 - **Button menu:** press and hold without dragging to get **Reset position** and **Reload page**.
 
 <p>
-  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/floating-button-menu.jpg" width="260" alt="Button menu with Reset position and Reload page">
+  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/floating-button-menu.jpg" width="160" alt="Button menu with Reset position and Reload page">
 </p>
 
 ### 2. Open the launcher
@@ -114,11 +114,13 @@ Open **Entity Explorer** or **Device Explorer** from the launcher. Search, selec
 - **Device Explorer:** expand a device's matching-entity count to see which of its entities match the filter.
 - **Entity details:** see the current state, when it last changed, and its attributes. Copy the entity ID or attributes with one tap.
 
-<p>
-  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/device-explorer-filters.jpg" width="260" alt="Device Explorer with search and filter chips">
-  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/device-matching-entities.jpg" width="260" alt="Device with two matching entities">
-  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/entity-state-attributes.jpg" width="260" alt="Entity details with state and attributes">
-</p>
+<div style="display: flex; gap: 1em">
+  <div style="display: flex; flex-direction: column;">
+    <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/device-explorer-filters.jpg" width="260" height="160" alt="Device Explorer with search and filter chips">
+    <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/device-matching-entities.jpg" width="260" height="160" alt="Device with two matching entities">
+  </div>
+  <img src="https://raw.githubusercontent.com/iva-stolnik/ha-quick-access/main/docs/images/entity-state-attributes.jpg" width="260" height="320" alt="Entity details with state and attributes">
+</div>
 
 > **Warning:** On mobile, opening an entity's **More Info** dialog or a device page (info icon in details view) may take you away from the page you're on. If you're editing something, such as an automation, save it first.
 
