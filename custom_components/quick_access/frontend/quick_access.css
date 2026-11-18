@@ -1063,11 +1063,15 @@ qap-button.qap-button.qap-linkish,
    remembers each row's real height once shown (the `auto` keyword). */
 .qap-device-list > .qap-state-row {
   content-visibility: auto;
-  /* Placeholder until shown: summary plus borders, and the matching-count button. */
-  contain-intrinsic-size: auto calc(var(--qap-row-height) + 2px);
+  /* Placeholder until shown: the two-line summary (taller than --qap-row-height) plus
+     borders, and the matching-count button. Rows shown for the first time grow by any
+     shortfall here, so an underestimate stops "scroll to end" short of the last row. */
+  --qap-device-row-estimate: calc(var(--qap-row-height) + 5px);
+  contain-intrinsic-size: auto var(--qap-device-row-estimate);
 }
 .qap-device-list-explained > .qap-state-row {
-  contain-intrinsic-size: auto calc(var(--qap-row-height) + 34px);
+  contain-intrinsic-size: auto
+    calc(var(--qap-device-row-estimate) + var(--ha-button-height, var(--button-height, 40px)));
 }
 .qap-state-row {
   border: var(--ha-border-width-sm, 1px) solid var(--qap-border);

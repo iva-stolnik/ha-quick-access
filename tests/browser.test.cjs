@@ -3397,7 +3397,7 @@ async function verifySmartFilters({ evaluate, send, width }) {
     await evaluate(
       `[...document.querySelector('.qap-profile-dropdown').querySelectorAll('qap-menu-item')].map(button=>button.textContent)`,
     ),
-    ["Move up", "Move down", "Set default", "Duplicate", "Disable", "Delete"],
+    ["Move up", "Move down", "Set default", "Add shortcut", "Duplicate", "Disable", "Delete"],
   );
   await evaluate(
     `document.querySelector('.qap-default-filter').click();new Promise(resolve=>setTimeout(resolve,50))`,
@@ -4767,7 +4767,10 @@ test(
           await evaluate(`document.querySelector('.qap-body').scrollTop=1000000`);
           await settleRows();
           assert.equal(
-            await evaluate(`document.querySelector('.qap-state-row:last-child').dataset.device`),
+            // Expanded rows keep their matching entities mounted, and those are state rows too.
+            await evaluate(
+              `document.querySelector('.qap-device-list > .qap-state-row:last-child').dataset.device`,
+            ),
             "device_0999",
           );
           assert.equal(
@@ -4813,7 +4816,10 @@ test(
           await evaluate(`document.querySelector('.qap-body').scrollTop=1000000`);
           await settleRows();
           assert.equal(
-            await evaluate(`document.querySelector('.qap-state-row:last-child').dataset.device`),
+            // Expanded rows keep their matching entities mounted, and those are state rows too.
+            await evaluate(
+              `document.querySelector('.qap-device-list > .qap-state-row:last-child').dataset.device`,
+            ),
             "device_0999",
           );
           await evaluate(
