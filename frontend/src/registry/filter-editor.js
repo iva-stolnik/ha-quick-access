@@ -51,6 +51,8 @@ export function createFilterEditor({
   getProfiles = () => [],
   saveFilters,
   getLinkedShortcuts = () => [],
+  addShortcut = null,
+  editShortcut = null,
   getValueContext,
   apply,
   preview,
@@ -154,7 +156,7 @@ export function createFilterEditor({
     replaceLocalizedChildren(host);
     previewLabel = note = null;
   }
-  function close() {
+  function close(restore = true) {
     const active = modal;
     feedback.clear();
     clear();
@@ -165,7 +167,7 @@ export function createFilterEditor({
     if (active) {
       const trigger = parentDialog.querySelector(".qap-filter-action");
       const restoreFocus = () => {
-        if (!modal && parentDialog.isConnected && trigger?.isConnected)
+        if (restore && !modal && parentDialog.isConnected && trigger?.isConnected)
           trigger.focus({ preventScroll: true });
       };
       const waitForClose = active.open;
@@ -332,6 +334,15 @@ export function createFilterEditor({
         }
       },
     });
+    // Matches the shortcut editor: disabled system filters are never offered for new shortcuts.
+    if (addShortcut && !(filter.hidden && SYSTEM_FILTERS.includes(id)))
+      actions.push({
+        value: "shortcut",
+        label: t("filters.add_shortcut"),
+        symbol: "mdi:bookmark-plus-outline",
+        className: "qap-filter-shortcut",
+        run: () => createShortcut(id, trigger),
+      });
     if (!SYSTEM_FILTERS.includes(id))
       actions.push({
         value: "duplicate",
@@ -385,6 +396,48 @@ export function createFilterEditor({
             filterTrigger(id)?.click();
           },
         },
+      },
+    );
+  }
+  /** Every request adds a new Favorites shortcut; later changes use the shortcut settings. */
+  async function createShortcut(id, trigger) {
+    if (busy || mode !== "choose" || !collection().some((item) => item.id === id)) return;
+    const active = modal;
+    l10n.text(note, "");
+    busy = true;
+    host.inert = true;
+    create.disabled = true;
+    let link = null;
+    try {
+      link = await addShortcut(id);
+    } finally {
+      busy = false;
+      host.inert = false;
+      if (create) create.disabled = false;
+    }
+    if (modal !== active || mode !== "choose") return;
+    if (!link) {
+      profileUi.showMutationError(note);
+      return;
+    }
+    profileUi.confirmAction(
+      {
+        title: t("filters.shortcut_added_title"),
+        description: t("filters.shortcut_added", { name: link.name }),
+        confirmLabel: t("common.edit"),
+        cancelLabel: t("common.ok"),
+        id: "qap-filter-shortcut-added",
+        configure: (body, confirm) => {
+          confirm.classList.remove("qap-button-danger");
+          confirm.classList.add("qap-button-primary", "qap-edit-filter-shortcut");
+          confirm.setAttribute("variant", "brand");
+          confirm.setAttribute("appearance", "accent");
+        },
+      },
+      trigger,
+      () => {
+        close(false);
+        editShortcut?.(link.id);
       },
     );
   }

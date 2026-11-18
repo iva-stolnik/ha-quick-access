@@ -38,6 +38,8 @@ export function mountRegistryList(
     getProfiles,
     saveFilters,
     getLinkedShortcuts,
+    addShortcut,
+    editShortcut,
     forms,
     profileUi,
     parentDialog,
@@ -243,6 +245,8 @@ export function mountRegistryList(
       getProfiles,
       saveFilters,
       getLinkedShortcuts,
+      addShortcut,
+      editShortcut,
       getValueContext: (field, scope) => {
         if (field === "device_class") {
           if (devices) startStateSource();

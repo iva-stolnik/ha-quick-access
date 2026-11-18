@@ -987,6 +987,7 @@ export function createProfileUi({
       title,
       description,
       confirmLabel,
+      cancelLabel = t("common.cancel"),
       id,
       notice,
       closeButton = false,
@@ -1029,7 +1030,7 @@ export function createProfileUi({
     const actions = node("div", "qap-form-actions");
     if (closeButton)
       heading.append(iconButton("mdi:close", t("common.close_confirmation"), dismiss));
-    const cancel = button(t("common.cancel"), dismiss);
+    const cancel = button(cancelLabel, dismiss);
     cancel.setAttribute("autofocus", "");
     const error = errorMessage();
     const confirm = button(

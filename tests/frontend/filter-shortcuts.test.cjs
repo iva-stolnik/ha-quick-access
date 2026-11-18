@@ -710,3 +710,93 @@ for (const [kind, field, expected] of [
       assert.equal(filterField(reopened, "Attribute name").value, "temperature");
   });
 }
+
+for (const kind of ["states", "devices"]) {
+  test(`${kind} filter menus add a Favorites shortcut and can open it for editing`, async () => {
+    const env = environment();
+    installDeviceRegistries(env);
+    env.status.hass.entities = {};
+    const definitions = await filterDefinitions(env);
+    const profile = savedProfile(env);
+    profile.filters = clone(definitions.profileFilters());
+    profile.filters[kind].push({
+      id: "custom",
+      name: "Custom",
+      icon: "mdi:lightbulb",
+      color: "#8e24aa",
+      hidden: false,
+      condition: definitions.group([
+        definitions.rule(kind === "states" ? "state" : "name", "equals", "on"),
+      ]),
+    });
+    const before = profile.settings.links.length;
+    await (kind === "devices" ? openDevices(env) : openEntityStates(env));
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    const panel = env.document.body.querySelector(".qap-filter-panel");
+    const row = () =>
+      panel.querySelectorAll(".qap-edit-item").find((item) => item.dataset.id === "custom");
+    const addShortcut = async () => {
+      await clickAndFlush(row().querySelector(".qap-filter-overflow"));
+      const item = profileMenuIn(env).querySelector(".qap-filter-shortcut");
+      assert.equal(item.textContent, "Add shortcut");
+      await clickAndFlush(item);
+      return env.document.body.querySelector(".qap-filter-shortcut-added-confirmation");
+    };
+
+    let modal = await addShortcut();
+    assert.equal(
+      modal.querySelector(".qap-settings-desc").textContent,
+      'Filter "Custom" added to shortcuts.',
+    );
+    const links = () => savedProfile(env).settings.links;
+    assert.equal(links().length, before + 1);
+    const { id, ...created } = clone(links().at(-1));
+    assert.ok(id);
+    assert.deepEqual(created, {
+      name: "Custom",
+      icon: "mdi:lightbulb",
+      color: "#8e24aa",
+      type: "saved-filter",
+      path: "",
+      group: "favorites",
+      filterId: "custom",
+      filterKind: kind,
+    });
+    await clickAndFlush(buttons(modal).find((item) => item.textContent === "OK"));
+    assert.equal(env.document.body.querySelector(".qap-filter-shortcut-added-confirmation"), null);
+    assert.ok(env.document.body.querySelector(".qap-filter-modal"), "OK keeps the filter list");
+
+    // The menu always offers a new shortcut, even when one already exists.
+    modal = await addShortcut();
+    assert.equal(links().length, before + 2);
+    assert.notEqual(links().at(-1).id, id);
+    await clickAndFlush(modal.querySelector(".qap-edit-filter-shortcut"));
+    assert.equal(env.document.body.querySelector(".qap-filter-modal"), null);
+    const editor = env.document.body.querySelector(".qap-shortcut-form");
+    assert.ok(editor);
+    assert.equal(filterField(editor, "Name").value, "Custom");
+    assert.equal(filterField(editor, "Filter").value, "custom");
+    const name = filterField(editor, "Name");
+    name.value = "Renamed";
+    await dispatchAndFlush(name, new Event("input"));
+    await clickAndFlush(buttons(editor).find((item) => item.textContent === "Save"));
+    assert.equal(links().at(-1).name, "Renamed");
+    assert.equal(links().at(-2).name, "Custom");
+
+    env.server.failWrites = true;
+    await clickAndFlush(env.document.body.querySelector(".qap-filter-action"));
+    await clickAndFlush(
+      env.document.body
+        .querySelector(".qap-filter-panel")
+        .querySelectorAll(".qap-edit-item")
+        .find((item) => item.dataset.id === "custom")
+        .querySelector(".qap-filter-overflow"),
+    );
+    await clickAndFlush(profileMenuIn(env).querySelector(".qap-filter-shortcut"));
+    assert.equal(env.document.body.querySelector(".qap-filter-shortcut-added-confirmation"), null);
+    assert.ok(
+      env.document.body.querySelector(".qap-filter-panel").querySelector(".qap-error").textContent,
+    );
+    assert.equal(links().length, before + 2);
+  });
+}

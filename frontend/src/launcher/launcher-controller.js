@@ -906,6 +906,12 @@ export function createLauncher({ controlsFactory = createControls } = {}) {
       getFilters: () => profileFilters(currentProfile()),
       getProfiles: () => profileSession.serverData?.profiles || [],
       getLinkedShortcuts: (id) => linkedFilterShortcuts(currentProfile(), kind, id),
+      addShortcut: (id) => shortcuts.addFilterShortcut(kind, id),
+      editShortcut: (id) =>
+        shortcuts.openShortcutEditor({
+          id,
+          trigger: dialog?.querySelector(".qap-filter-action"),
+        }),
       saveFilters: (filters, deletedId) => {
         const profile = currentProfile();
         if (!profile) return Promise.resolve(false);

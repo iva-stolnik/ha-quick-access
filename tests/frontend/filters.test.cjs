@@ -315,6 +315,7 @@ test("filter menus share localized actions for built-ins, templates and custom f
               "move-down": "Move down",
               default: "Default",
               setDefault: "Set default",
+              shortcut: "Add shortcut",
               duplicate: "Duplicate",
               enable: "Enable",
               disable: "Disable",
@@ -325,6 +326,7 @@ test("filter menus share localized actions for built-ins, templates and custom f
               "move-down": "Pomakni dolje",
               default: "Zadani",
               setDefault: "Postavi kao zadani",
+              shortcut: "Dodaj prečac",
               duplicate: "Dupliciraj",
               enable: "Omogući",
               disable: "Onemogući",
@@ -352,8 +354,8 @@ test("filter menus share localized actions for built-ins, templates and custom f
           [
             ...moves,
             ...(system
-              ? ["default", ...visibility]
-              : ["default", "duplicate", "visibility", "delete"]),
+              ? ["default", "shortcut", ...visibility]
+              : ["default", "shortcut", "duplicate", "visibility", "delete"]),
           ],
         );
         assert.deepEqual(
@@ -361,8 +363,8 @@ test("filter menus share localized actions for built-ins, templates and custom f
           [
             ...moves.map((move) => labels[move]),
             ...(system
-              ? [defaultLabel, ...(id === "all" ? [] : [visibilityLabel])]
-              : [defaultLabel, labels.duplicate, visibilityLabel, labels.delete]),
+              ? [defaultLabel, labels.shortcut, ...(id === "all" ? [] : [visibilityLabel])]
+              : [defaultLabel, labels.shortcut, labels.duplicate, visibilityLabel, labels.delete]),
           ],
         );
         assert.equal(
@@ -519,7 +521,7 @@ for (const kind of ["states", "devices"]) {
     assert.ok(menu.querySelector(".qap-delete-filter"));
     assert.deepEqual(
       buttons(menu).map((item) => item.textContent),
-      ["Move up", "Move down", "Set default", "Duplicate", "Disable", "Delete"],
+      ["Move up", "Move down", "Set default", "Add shortcut", "Duplicate", "Disable", "Delete"],
     );
     assert.equal(
       panel.querySelector(".qap-filter-metadata"),

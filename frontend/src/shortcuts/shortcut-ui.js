@@ -164,9 +164,9 @@ export function createShortcutUi({
     path = "",
     returnView = host.currentView,
     parent = null,
+    trigger = parent?.trigger,
   } = {}) {
     if (!host.dialog || profileSession.profileSaving || profileUi.profileDialog) return;
-    let trigger = parent?.trigger;
     if (trigger == null) {
       if (id)
         trigger = [...host.shell.querySelectorAll(".qap-shortcut-row")].find(
@@ -198,6 +198,26 @@ export function createShortcutUi({
     renderShortcutEditor(editor, { id, category, path, parent });
     profileUi.showProfileStatus();
     commitNavigation();
+  }
+
+  /** Saves a saved-filter shortcut in Favorites from the filter's current presentation. */
+  async function addFilterShortcut(kind, filterId) {
+    const profile = currentProfile();
+    const filter = resolveShortcutFilter(profile, { filterKind: kind, filterId });
+    if (!filter || !eligibleShortcutFilters(profile, kind).includes(filter)) return null;
+    const link = {
+      id: newId(),
+      name: truncateText(String(filterLabel(filter, kind, t)), SHORTCUT_NAME_MAX_LENGTH),
+      icon: filterIcon(filter),
+      color: normalizeIconColor(filter.color),
+      type: "saved-filter",
+      path: "",
+      group: "favorites",
+      filterId,
+      filterKind: kind,
+    };
+    const links = upsertShortcut(getConfig().links, link);
+    return (await saveSettings({ ...getConfig(), links })) ? link : null;
   }
 
   function shortcutTile(link, { preview = false, hideName = false } = {}) {
@@ -1925,6 +1945,7 @@ export function createShortcutUi({
     renderShortcutsSettings,
     renderCategoriesSettings,
     openShortcutEditor,
+    addFilterShortcut,
     closeCategoryEditor,
     createCategory: () => editSettingsCategory?.(),
     get categoryRoot() {
