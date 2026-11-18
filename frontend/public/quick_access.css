@@ -1024,6 +1024,28 @@ qap-button.qap-button.qap-linkish,
 .qap-pagination[hidden] {
   display: none;
 }
+/* Search, recent searches, filters and the count line stay pinned above the scrolling list. */
+.qap-states-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ha-dialog-surface-background, var(--qap-bg));
+}
+/* Bottom-sheet layouts (qap-dialog's breakpoint): scrolling down slides everything above
+   the count line away; JS sets how far. Only transform moves, so the list never reflows. */
+@media (max-width: 870px), (max-height: 500px) {
+  .qap-states-header {
+    transition: transform var(--ha-animation-duration-normal, 200ms) ease;
+  }
+  .qap-states-header.qap-states-header-hidden {
+    transform: translateY(calc(-1 * var(--qap-header-collapse, 0px)));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qap-states-header {
+    transition: none;
+  }
+}
 .qap-state-list {
   display: grid;
   gap: 7px;

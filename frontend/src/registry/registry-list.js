@@ -11,6 +11,10 @@ import { compileFilter, entityDeviceIndex } from "./filter-evaluation.js";
 import { createFilterEditor } from "./filter-editor.js";
 const EMPTY_REGISTRY = Object.freeze({});
 const FILTER_PREVIEW_PAGE_SIZE = 40;
+// Same breakpoint as qap-dialog's bottom-sheet presentation (ui/components/dialog.ts).
+const SHEET_QUERY = "(max-width: 870px), (max-height: 500px)";
+// Scrolling this far in one direction hides or reveals the header; smaller wobbles are ignored.
+const HEADER_SCROLL_THRESHOLD = 8;
 import {
   normalizeStatesSearchHistory,
   STATES_SEARCH_MAX_LENGTH,
@@ -230,7 +234,12 @@ export function mountRegistryList(
   const registryStatus = node("div", "qap-registry-status");
   registryStatus.setAttribute("role", "status");
   registryStatus.hidden = true;
-  wrap.append(search, recent, filters, topline, registryStatus, list);
+  // Pinned while the list scrolls. In bottom-sheet layouts, scrolling down slides the
+  // search, recent searches and filters away (the count line stays); scrolling up
+  // brings them back. Only `transform` moves, so the list never changes size or position.
+  const header = node("div", "qap-states-header");
+  header.append(search, recent, filters, topline);
+  wrap.append(header, registryStatus, list);
   const filterHost = node("section", "qap-filter-panel qap-state-modal-body");
   const filterPreviewRows = new WeakMap();
   filterHost.hidden = true;
@@ -347,13 +356,77 @@ export function mountRegistryList(
     resizeObserver.observe(body);
     // This includes history wrapping, delayed native controls and theme/font changes.
     resizeObserver.observe(wrap);
-    body.addEventListener("scroll", onScroll, { passive: true });
     body.addEventListener("focusout", onFocusOut);
     window.addEventListener("resize", onResize);
+  }
+  // Header hide-on-scroll ("quick return"). The sheet query matches qap-dialog's own
+  // bottom-sheet breakpoint; on larger layouts the header simply stays pinned.
+  const sheetMedia = window.matchMedia?.(SHEET_QUERY);
+  let headerHidden = false;
+  let lastScrollTop = 0;
+  let scrollTravel = 0;
+  let ignoreScroll = false;
+  const headerObserver = new ResizeObserver(updateHeaderCover);
+  headerObserver.observe(header);
+  body.addEventListener("scroll", onScroll, { passive: true });
+  header.addEventListener("focusin", showHeader);
+  sheetMedia?.addEventListener?.("change", showHeader);
+  function showHeader() {
+    setHeaderHidden(false);
+  }
+  function setHeaderHidden(hidden) {
+    scrollTravel = 0;
+    if (hidden === headerHidden) return;
+    headerHidden = hidden;
+    // The count line's offset is exactly how far the header must move to leave it at the top.
+    if (hidden) header.style.setProperty("--qap-header-collapse", `${topline.offsetTop || 0}px`);
+    header.classList.toggle("qap-states-header-hidden", hidden);
+  }
+  // Keyboard and native focus scrolling keep rows below the pinned header. The full
+  // height is used even while collapsed, because scrolling up reveals the header again.
+  function updateHeaderCover() {
+    body.style.scrollPaddingTop = `${header.offsetHeight || 0}px`;
+  }
+  function headerCover() {
+    return header.offsetHeight || 0;
+  }
+  function onHeaderScroll() {
+    // Clamp so elastic overscroll at either end (iOS bounce) is not read as a direction.
+    const max = Math.max(0, body.scrollHeight - body.clientHeight);
+    const top = Math.min(Math.max(body.scrollTop, 0), max);
+    const delta = top - lastScrollTop;
+    lastScrollTop = top;
+    if (ignoreScroll) {
+      ignoreScroll = false;
+      return;
+    }
+    if (top <= 0 || !sheetMedia?.matches || header.contains(document.activeElement)) {
+      setHeaderHidden(false);
+      return;
+    }
+    if (!delta) return;
+    scrollTravel = Math.sign(delta) === Math.sign(scrollTravel) ? scrollTravel + delta : delta;
+    if (scrollTravel > HEADER_SCROLL_THRESHOLD) setHeaderHidden(true);
+    else if (scrollTravel < -HEADER_SCROLL_THRESHOLD) setHeaderHidden(false);
+  }
+  // Position restores and list-length clamps are not the user's scrolling direction.
+  function setScrollTop(value) {
+    if (body.scrollTop === value) return;
+    ignoreScroll = true;
+    body.scrollTop = value;
+    // Scroll events run before animation frame callbacks, so a clamped write that
+    // produced no event cannot swallow the user's next scroll.
+    requestAnimationFrame(() => {
+      ignoreScroll = false;
+    });
   }
   const dispose = () => {
     view.scrollTop = body.scrollTop;
     disposed = true;
+    headerObserver.disconnect();
+    sheetMedia?.removeEventListener?.("change", showHeader);
+    // The dialog body is shared with other launcher views.
+    body.style.scrollPaddingTop = "";
     editor?.dispose();
     deviceRegistries?.dispose();
     deviceRegistries = null;
@@ -630,8 +703,10 @@ export function mountRegistryList(
     }, STATES_UPDATE_BATCH_MS);
   }
 
+  // One body scroll listener for both lists: the header always, row windowing for entities.
   function onScroll() {
-    scheduleRows();
+    onHeaderScroll();
+    if (virtual) scheduleRows();
   }
   function onResize() {
     scheduleRows(true);
@@ -738,7 +813,7 @@ export function mountRegistryList(
     }
     // Restore the saved position once the rows it refers to exist.
     if (pendingScroll !== null && matches.length) {
-      body.scrollTop = pendingScroll;
+      setScrollTop(pendingScroll);
       pendingScroll = null;
     }
     updateReturnFocus();
@@ -762,13 +837,13 @@ export function mountRegistryList(
     if (list.style.height !== height) list.style.height = height;
     list.classList.toggle("qap-state-list-virtual", matches.length > 0);
     if (pendingScroll !== null && rowHeight) {
-      body.scrollTop = pendingScroll;
+      setScrollTop(pendingScroll);
       pendingScroll = null;
     }
     membershipScroll = false;
     // A membership change may shorten the list while the body is far down it.
     const maxScroll = Math.max(0, listOffset + totalHeight + bottomPadding - viewportHeight);
-    if (rowHeight && (stayAtEnd || body.scrollTop > maxScroll)) body.scrollTop = maxScroll;
+    if (rowHeight && (stayAtEnd || body.scrollTop > maxScroll)) setScrollTop(maxScroll);
     lastMaxScroll = rowHeight ? maxScroll : 0;
     const start = rowHeight
       ? clamp(
@@ -907,7 +982,9 @@ export function mountRegistryList(
         if (index < 0 || index >= matches.length || rowsById.has(matches[index])) return;
         event.preventDefault();
         const top = listOffset + rowOffset(index);
-        if (top < body.scrollTop) body.scrollTop = top;
+        // Rows above the fold must clear the pinned header, not just the viewport edge.
+        const cover = headerCover();
+        if (top - cover < body.scrollTop) body.scrollTop = Math.max(0, top - cover);
         else if (top + rowHeight > body.scrollTop + viewportHeight)
           body.scrollTop = top + rowHeight - viewportHeight;
         renderRows();

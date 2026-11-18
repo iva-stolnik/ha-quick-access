@@ -468,7 +468,8 @@ test("replacing a states view releases its virtual listeners and does not let pe
   assert.equal(getEventListeners(oldBody, "scroll").length, 0);
   assert.equal(getEventListeners(newBody, "scroll").length, 1);
   assert.equal(getEventListeners(env.window, "resize").length, 2);
-  assert.equal(env.resizeObservers.size, 1);
+  // Row windowing and the pinned header each observe one size.
+  assert.equal(env.resizeObservers.size, 2);
   assert.equal([...env.timers.values()].filter((timer) => timer.delay === 3500).length, 1);
   assert.equal(
     [...env.timers.values()].some((timer) => timer.delay === 175),
@@ -477,4 +478,62 @@ test("replacing a states view releases its virtual listeners and does not let pe
   assert.equal(env.document.body.querySelector(".qap-count").textContent, "1 entity");
   await env.tick(175);
   assert.equal(env.document.body.querySelector(".qap-body"), newBody);
+});
+
+test("bottom-sheet list header hides on scroll down, returns on scroll up, top, focus and desktop", async () => {
+  const env = environment();
+  env.status.hass.states = largeStates(200);
+  const sheet = {
+    matches: true,
+    listeners: new Set(),
+    addEventListener(type, listener) {
+      this.listeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      this.listeners.delete(listener);
+    },
+  };
+  env.window.matchMedia = () => sheet;
+  await openEntityStates(env);
+  const body = env.document.body.querySelector(".qap-body");
+  const header = env.document.body.querySelector(".qap-states-header");
+  assert.ok(header.querySelector(".qap-state-tabs"), "filters live in the pinned header");
+  assert.ok(header.querySelector(".qap-count"), "the count line lives in the pinned header");
+  body.scrollHeight = 20000;
+  const max = body.scrollHeight - body.clientHeight;
+  const hidden = () => header.className.split(" ").includes("qap-states-header-hidden");
+  const scrollTo = (top) => {
+    body.scrollTop = top;
+    body.dispatchEvent(new Event("scroll"));
+  };
+  scrollTo(5);
+  assert.equal(hidden(), false, "small wobbles do not hide the header");
+  scrollTo(60);
+  assert.equal(hidden(), true, "scrolling down hides the header");
+  scrollTo(55);
+  assert.equal(hidden(), true, "a small move up keeps it hidden");
+  scrollTo(40);
+  assert.equal(hidden(), false, "scrolling up reveals the header without returning to the top");
+  scrollTo(400);
+  assert.equal(hidden(), true);
+  header.dispatchEvent(new Event("focusin"));
+  assert.equal(hidden(), false, "focus inside the header reveals it");
+  scrollTo(800);
+  scrollTo(max);
+  assert.equal(hidden(), true);
+  scrollTo(max + 60);
+  scrollTo(max);
+  assert.equal(hidden(), true, "elastic overscroll at the end is not a scroll up");
+  scrollTo(0);
+  assert.equal(hidden(), false, "the top always shows the header");
+  scrollTo(500);
+  assert.equal(hidden(), true);
+  sheet.matches = false;
+  for (const listener of sheet.listeners) listener();
+  assert.equal(hidden(), false, "leaving the bottom-sheet layout reveals the header");
+  scrollTo(1500);
+  assert.equal(hidden(), false, "larger layouts keep the header pinned");
+  await clickAndFlush(env.document.body.querySelector(".qap-head-button"));
+  assert.equal(sheet.listeners.size, 0);
+  assert.equal(body.style.scrollPaddingTop, "", "the shared dialog body is restored");
 });

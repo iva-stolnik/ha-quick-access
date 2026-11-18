@@ -558,7 +558,8 @@ test("repeated launcher and entity-list cycles release mounted resources", async
   let closedResources;
   for (let cycle = 0; cycle < 20; cycle++) {
     assert.equal(provider.listeners.size, 1);
-    assert.equal(env.resizeObservers.size, 1);
+    // Row windowing and the pinned header each observe one size.
+    assert.equal(env.resizeObservers.size, 2);
     provider.publish({ ...env.status.hass.states });
     await clickAndFlush(env.document.body.querySelector(".qap-head-button"));
     assert.equal(provider.listeners.size, 0);
