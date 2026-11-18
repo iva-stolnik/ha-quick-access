@@ -1,5 +1,13 @@
 # Changelog
 
+
+## 1.2.0 - 2026-11-18
+
+- Add entity and device filter shortcuts directly from the Filters menu. Shortcuts are saved to Favorites using the filter's name, icon and color, with an option to edit them immediately.
+- Keep search, recent searches, filters and the result count pinned while scrolling in Entity Explorer and Device Explorer. On mobile, search and filters hide when scrolling down and return when scrolling up, while the count stays visible.
+- Improve Device Explorer scrolling performance and preserve expanded matching entities when scrolling through the list.
+- Refresh the README with updated screenshots and usage instructions.
+
 ## 1.1.0 - 2026-11-10
 
 - Choose Device entities directly from the condition selector when editing device filters, with conditions matching any or all of a device's entities.
