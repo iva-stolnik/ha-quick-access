@@ -34,7 +34,7 @@ const {
   shortcutAction,
 } = require("./harness.cjs");
 
-test("device matching entity controls preserve native tab order and cross unmounted rows in both directions", async () => {
+test("device matching entity controls preserve native tab order and stay mounted while scrolled away", async () => {
   const env = environment();
   const devices = Array.from({ length: 100 }, (_, index) =>
     deviceFixture(`device_${String(index).padStart(3, "0")}`, {
@@ -87,34 +87,22 @@ test("device matching entity controls preserve native tab order and cross unmoun
   assert.equal(tab(expand), false, "Tab reaches the matching entity before the next device");
   assert.equal(tab(matchingSummary, true), false, "Shift+Tab reaches the expansion button");
   await scrollStates(env, 160 + 50 * 74);
+  // Rows and their expansion survive scrolling, so the browser's tab order applies.
+  assert.equal(first.isConnected, true);
+  assert.equal(list.children.length, 100);
+  assert.equal(expand.attributes["aria-expanded"], "true");
+  assert.ok(
+    first.querySelector(".qap-matching-entity").querySelector(".qap-state-summary") ===
+      matchingSummary,
+    "the expanded matching entity row is kept",
+  );
+  assert.equal(tab(matchingSummary), false, "Tab leaves the matching entity natively");
   assert.equal(
-    list.children.some((row) => row.dataset.device === "device_001"),
+    tab(list.children[1].querySelector(".qap-state-summary"), true),
     false,
+    "Shift+Tab returns to the previous row natively",
   );
-  assert.equal(tab(summary), false, "an unmounted next row must not skip the expansion button");
-  assert.equal(tab(expand), false);
-  assert.equal(tab(matchingSummary), true);
-  assert.equal(
-    env.document.activeElement,
-    list.children
-      .find((row) => row.dataset.device === "device_001")
-      .querySelector(".qap-state-summary"),
-  );
-  await scrollStates(env, 160 + 50 * 74);
-  assert.equal(first.isConnected, false);
-  const nextSummary = env.document.activeElement;
-  assert.equal(tab(nextSummary, true), true);
-  const restored = list.children.find((row) => row.dataset.device === "device_000");
-  assert.equal(
-    env.document.activeElement,
-    restored.querySelector(".qap-matching-count"),
-    "reverse boundary crossing lands on the previous row's last control",
-  );
-  assert.equal(
-    tab(restored.querySelector(".qap-state-summary"), true),
-    false,
-    "Shift+Tab can leave the first row",
-  );
+  assert.equal(tab(summary, true), false, "Shift+Tab can leave the first row");
 });
 
 test("device entity filters batch affected devices, keep explanations collapsed, reuse rows and reset expansion on filter switch", async () => {

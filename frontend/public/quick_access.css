@@ -1037,6 +1037,16 @@ qap-button.qap-button.qap-linkish,
   position: absolute;
   inset-inline: 0;
 }
+/* Device rows stay in normal flow. The browser skips rendering offscreen rows and
+   remembers each row's real height once shown (the `auto` keyword). */
+.qap-device-list > .qap-state-row {
+  content-visibility: auto;
+  /* Placeholder until shown: summary plus borders, and the matching-count button. */
+  contain-intrinsic-size: auto calc(var(--qap-row-height) + 2px);
+}
+.qap-device-list-explained > .qap-state-row {
+  contain-intrinsic-size: auto calc(var(--qap-row-height) + 34px);
+}
 .qap-state-row {
   border: var(--ha-border-width-sm, 1px) solid var(--qap-border);
   border-radius: var(--ha-border-radius-lg, 12px);

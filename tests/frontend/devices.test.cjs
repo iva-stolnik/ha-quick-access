@@ -250,11 +250,11 @@ test("Device navigation uses the owned link control independently of HA icon but
   assert.equal(modal.querySelector(".qap-state-dialog-favorite").localName, "qap-icon-button");
 });
 
-test("Devices virtualize 10000 records, retain keyboard reachability and restore the searched viewport", async () => {
+test("Devices mount every record in normal flow, keep native tab order and restore the searched viewport", async () => {
   const env = environment();
   installDeviceRegistries(
     env,
-    Array.from({ length: 10000 }, (_, index) =>
+    Array.from({ length: 2000 }, (_, index) =>
       deviceFixture(`d_${String(index).padStart(5, "0")}`, {
         name: `Device ${String(index).padStart(5, "0")}`,
         name_by_user: null,
@@ -262,37 +262,41 @@ test("Devices virtualize 10000 records, retain keyboard reachability and restore
     ),
   );
   const search = await openDevices(env);
-  assert.equal(env.document.body.querySelector(".qap-count").textContent, "10000 devices");
+  assert.equal(env.document.body.querySelector(".qap-count").textContent, "2000 devices");
   const list = env.document.body.querySelector(".qap-state-list");
-  assert.ok(list.children.length < 20);
-  await scrollStates(env, 160 + 5000 * 74);
-  const ids = list.querySelectorAll(".qap-state-row").map((row) => row.dataset.device);
-  assert.equal(ids[0], "d_04996");
-  const lastMounted = list.children.at(-1);
-  const row = lastMounted.querySelector(".qap-state-summary");
-  assert.equal(lastMounted.querySelector(".qap-matching-count").hidden, true);
+  // The browser skips offscreen rendering (content-visibility); rows are not windowed.
+  assert.equal(list.className.includes("qap-device-list"), true);
+  assert.equal(list.className.includes("qap-state-list-virtual"), false);
+  assert.equal(list.children.length, 2000);
+  assert.deepEqual(
+    list.children.slice(0, 3).map((row) => row.dataset.device),
+    ["d_00000", "d_00001", "d_00002"],
+  );
+  assert.equal(list.children[1000].style.top || "", "", "rows are not absolutely positioned");
+  await scrollStates(env, 160 + 1000 * 74);
+  assert.equal(list.children.length, 2000, "scrolling does not mount or unmount rows");
+  const middle = list.children[1000];
+  const row = middle.querySelector(".qap-state-summary");
+  assert.equal(middle.querySelector(".qap-matching-count").hidden, true);
   row.focus();
   const tab = new Event("keydown", { cancelable: true });
   Object.assign(tab, { key: "Tab" });
   row.dispatchEvent(tab);
-  assert.equal(tab.defaultPrevented, true);
-  assert.equal(
-    env.document.activeElement.parentElement.dataset.device,
-    `d_${String(Number(lastMounted.dataset.device.slice(2)) + 1).padStart(5, "0")}`,
-  );
+  assert.equal(tab.defaultPrevented, false, "Tab moves to the next mounted row natively");
   const keyboardScrollTop = env.document.body.querySelector(".qap-body").scrollTop;
-  env.document.activeElement.click();
+  row.click();
   const modal = env.document.body.querySelector(".qap-state-modal");
   modal.dispatchEvent(new Event("cancel"));
   assert.equal(env.document.body.querySelector(".qap-body").scrollTop, keyboardScrollTop);
-  search.value = "Device 09999";
+  search.value = "Device 01999";
   search.dispatchEvent(new Event("input"));
   await env.tick(175);
-  assert.equal(list.querySelector(".qap-state-row").dataset.device, "d_09999");
+  assert.equal(list.querySelector(".qap-state-row").dataset.device, "d_01999");
+  assert.equal(list.children.length, 1);
   assert.equal(env.document.body.querySelector(".qap-count").textContent, "1 device");
   search.value = "";
   search.dispatchEvent(new Event("input"));
-  await scrollStates(env, 160 + 9000 * 74);
+  await scrollStates(env, 160 + 1800 * 74);
   const scrollTop = env.document.body.querySelector(".qap-body").scrollTop;
   buttons(env.document.body)
     .find((button) => button.title === "Back")

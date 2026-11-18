@@ -69,6 +69,10 @@ export function mountRegistryList(
     getRegistries: () => deviceRegistries,
   });
   const devices = kind === "devices";
+  // Entity lists can hold thousands of uniform rows and are windowed. Device rows can
+  // expand with matching entities, so they stay in normal flow and the browser skips
+  // offscreen rendering (content-visibility) instead of this code measuring rows.
+  const virtual = !devices;
   const updateStateRow = devices ? updateDeviceRow : updateEntityRow;
   const labels = devices ? "devices" : "entities";
   const recordId = (record) => (devices ? record.id : record.entity_id);
@@ -174,7 +178,7 @@ export function mountRegistryList(
   filters.setAttribute("role", "group");
   l10n.attribute(filters, "aria-label", t(`${labels}.filters`));
   const count = node("div", "qap-count");
-  const list = node("div", "qap-state-list");
+  const list = node("div", virtual ? "qap-state-list" : "qap-state-list qap-device-list");
   list.setAttribute("role", "list");
   l10n.attribute(list, "aria-label", t(`${labels}.title`));
   function updateFilters() {
@@ -302,9 +306,6 @@ export function mountRegistryList(
   let compiledContext = [];
   let activeFilter = view.filter;
   let previewCache = null;
-  const extraHeights = new Map();
-  let rowOffsets = null;
-  let explanationLayoutGeneration = 0;
   let renderedStates = {};
   let searchNames = new WeakMap();
   let nameContext = [];
@@ -329,23 +330,27 @@ export function mountRegistryList(
   let membershipScroll = false;
   // The end of the list from the previous render, to keep following it while rows are measured.
   let lastMaxScroll = 0;
-  const resizeObserver = new ResizeObserver((entries) => {
-    // Observing a replacement sample sends an initial notification even when
-    // its dimensions are unchanged. Do not render a second time for each scroll.
-    if (
-      entries.some(
-        (entry) =>
-          entry.target !== measuredRow || entry.borderBoxSize?.[0]?.blockSize !== rowHeight,
-      )
-    )
-      scheduleRows(true);
-  });
-  resizeObserver.observe(body);
-  // This includes history wrapping, delayed native controls and theme/font changes.
-  resizeObserver.observe(wrap);
-  body.addEventListener("scroll", onScroll, { passive: true });
-  body.addEventListener("focusout", onFocusOut);
-  window.addEventListener("resize", onResize);
+  const resizeObserver = virtual
+    ? new ResizeObserver((entries) => {
+        // Observing a replacement sample sends an initial notification even when
+        // its dimensions are unchanged. Do not render a second time for each scroll.
+        if (
+          entries.some(
+            (entry) =>
+              entry.target !== measuredRow || entry.borderBoxSize?.[0]?.blockSize !== rowHeight,
+          )
+        )
+          scheduleRows(true);
+      })
+    : null;
+  if (virtual) {
+    resizeObserver.observe(body);
+    // This includes history wrapping, delayed native controls and theme/font changes.
+    resizeObserver.observe(wrap);
+    body.addEventListener("scroll", onScroll, { passive: true });
+    body.addEventListener("focusout", onFocusOut);
+    window.addEventListener("resize", onResize);
+  }
   const dispose = () => {
     view.scrollTop = body.scrollTop;
     disposed = true;
@@ -356,7 +361,7 @@ export function mountRegistryList(
     clearTimeout(updateTimer);
     entitySource?.dispose();
     if (frame !== null) cancelAnimationFrame(frame);
-    resizeObserver.disconnect();
+    resizeObserver?.disconnect();
     body.removeEventListener("scroll", onScroll);
     body.removeEventListener("focusout", onFocusOut);
     window.removeEventListener("resize", onResize);
@@ -365,7 +370,6 @@ export function mountRegistryList(
     matchingIds.clear();
     matchingEntities.clear();
     entityStates.clear();
-    extraHeights.clear();
     renderedStates = {};
     pendingStates = null;
     searchNames = new WeakMap();
@@ -511,8 +515,6 @@ export function mountRegistryList(
     }
     if (activeFilter !== view.filter) {
       activeFilter = view.filter;
-      extraHeights.clear();
-      rowOffsets = null;
       for (const entry of rowsById.values()) {
         entry.expanded = false;
         if (entry.explanation) {
@@ -649,37 +651,17 @@ export function mountRegistryList(
     });
   }
 
+  // Virtual entity rows all share one measured height.
   function rowOffset(index) {
-    const stride = rowHeight + rowGap;
-    if (extraHeights.size && !rowOffsets) {
-      let offset = 0;
-      rowOffsets = matches.map((id) => {
-        const top = offset;
-        offset += stride + (extraHeights.get(id) || 0);
-        return top;
-      });
-    }
-    return rowOffsets?.[index] ?? index * stride;
+    return index * (rowHeight + rowGap);
   }
   function rowIndex(offset) {
-    if (!extraHeights.size) return Math.floor(offset / (rowHeight + rowGap));
-    let low = 0,
-      high = matches.length;
-    while (low < high) {
-      const mid = (low + high) >>> 1;
-      if (rowOffset(mid) <= offset) low = mid + 1;
-      else high = mid;
-    }
-    return Math.max(0, low - 1);
+    return Math.floor(offset / (rowHeight + rowGap));
   }
 
   function measureLayout() {
-    explanationLayoutGeneration++;
-    // Measure the shared summary separately from optional matching-entity details.
     const sample = rowsById.values().next().value?.row;
-    const height = sample
-      ? sample.getBoundingClientRect().height - (extraHeights.get(sample.dataset.id) || 0)
-      : 0;
+    const height = sample ? sample.getBoundingClientRect().height : 0;
     const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
     const offset =
       list.getBoundingClientRect().top -
@@ -690,27 +672,81 @@ export function mountRegistryList(
     const anchorIndex = oldStride > 0 ? Math.max(0, rowIndex(body.scrollTop - listOffset)) : 0;
     const anchorFraction =
       oldStride > 0
-        ? Math.max(0, body.scrollTop - listOffset - rowOffset(anchorIndex)) /
-          (oldStride + (extraHeights.get(matches[anchorIndex]) || 0))
+        ? Math.max(0, body.scrollTop - listOffset - rowOffset(anchorIndex)) / oldStride
         : 0;
     if (height > 0) rowHeight = height;
     rowGap = gap;
-    if (oldStride !== rowHeight + rowGap) rowOffsets = null;
     listOffset = offset;
     viewportHeight = body.clientHeight;
     bottomPadding = parseFloat(getComputedStyle(wrap).paddingBottom) || 0;
     // Keep the same entity at the viewport edge when fonts/zoom change height.
     if ((anchorIndex > 0 || anchorFraction > 0) && height > 0 && oldStride !== rowHeight + rowGap) {
-      pendingScroll =
-        listOffset +
-        rowOffset(anchorIndex) +
-        anchorFraction * (rowHeight + rowGap + (extraHeights.get(matches[anchorIndex]) || 0));
+      pendingScroll = listOffset + rowOffset(anchorIndex) + anchorFraction * (rowHeight + rowGap);
     }
     layoutDirty = false;
   }
 
-  function renderRows() {
+  function updateReturnFocus() {
+    if (!details.active) return;
+    const previewRow = [...filterHost.querySelectorAll(".qap-state-row")].find(
+      (row) => row.dataset.id === details.active.dataset.id,
+    );
+    details.returnFocus = editor?.active
+      ? previewRow?.querySelector(".qap-state-summary") ||
+        filterHost.querySelector(".qap-filter-preview-action")
+      : detailsTrigger(details.active.dataset.id, details.active.dataset.kind) || searchInput;
+  }
+
+  function setRowPosition(entry, index) {
+    if (entry.index !== index) entry.row.setAttribute("aria-posinset", String(index + 1));
+    if (entry.total !== matches.length)
+      entry.row.setAttribute("aria-setsize", String(matches.length));
+    entry.index = index;
+    entry.total = matches.length;
+  }
+
+  /**
+   * Device rows: every match is mounted in order and laid out by the browser.
+   * `changed` limits row content updates to re-evaluated devices; null updates all.
+   */
+  function renderAllRows(changed) {
+    // Lets CSS size not-yet-rendered rows to include the matching-count button.
+    list.classList.toggle("qap-device-list-explained", Boolean(compiled?.usesEntities));
+    const wanted = new Set(matches);
+    for (const [id, entry] of rowsById) {
+      if (wanted.has(id)) continue;
+      if (entry.row.contains(document.activeElement)) searchInput.focus({ preventScroll: true });
+      removeLocalizedElement(entry.row);
+      rowsById.delete(id);
+    }
+    for (let index = 0; index < matches.length; index++) {
+      const id = matches[index];
+      const state = renderedStates[id] || knownStates.get(id);
+      let entry = rowsById.get(id);
+      const created = !entry;
+      if (created) {
+        entry = createStateRow(state);
+        rowsById.set(id, entry);
+      }
+      if (created || !changed || changed.has(id)) {
+        updateStateRow(entry, state);
+        updateExplanation(entry, id);
+      }
+      setRowPosition(entry, index);
+      if (list.children[index] !== entry.row)
+        list.insertBefore(entry.row, list.children[index] || null);
+    }
+    // Restore the saved position once the rows it refers to exist.
+    if (pendingScroll !== null && matches.length) {
+      body.scrollTop = pendingScroll;
+      pendingScroll = null;
+    }
+    updateReturnFocus();
+  }
+
+  function renderRows(changed = null) {
     if (disposed) return;
+    if (!virtual) return renderAllRows(changed);
     const stride = rowHeight + rowGap;
     // Read before changing the list height: rows near the end can turn out taller once
     // measured, and a user who scrolled to the end should still see the last row. Unmeasured
@@ -721,9 +757,7 @@ export function mountRegistryList(
       body.scrollTop > 0 &&
       ((lastMaxScroll > 0 && body.scrollTop >= lastMaxScroll - 1) ||
         body.scrollTop >= body.scrollHeight - body.clientHeight - 1);
-    const totalHeight = matches.length
-      ? rowOffset(matches.length - 1) + stride + (extraHeights.get(matches.at(-1)) || 0) - rowGap
-      : 0;
+    const totalHeight = matches.length ? matches.length * stride - rowGap : 0;
     const height = matches.length && rowHeight ? `${totalHeight}px` : "";
     if (list.style.height !== height) list.style.height = height;
     list.classList.toggle("qap-state-list-virtual", matches.length > 0);
@@ -766,10 +800,6 @@ export function mountRegistryList(
       if (entry.row.contains(document.activeElement)) searchInput.focus({ preventScroll: true });
       removeLocalizedElement(entry.row);
       rowsById.delete(id);
-      if (extraHeights.delete(id)) {
-        rowOffsets = null;
-        scheduleRows();
-      }
     }
     for (let position = 0; position < ordered.length; position++) {
       const index = ordered[position];
@@ -780,14 +810,9 @@ export function mountRegistryList(
         rowsById.set(recordId(state), entry);
       }
       updateStateRow(entry, state);
-      if (devices) updateExplanation(entry, recordId(state));
       const top = `${rowOffset(index)}px`;
       if (entry.row.style.top !== top) entry.row.style.top = top;
-      if (entry.index !== index) entry.row.setAttribute("aria-posinset", String(index + 1));
-      if (entry.total !== matches.length)
-        entry.row.setAttribute("aria-setsize", String(matches.length));
-      entry.index = index;
-      entry.total = matches.length;
+      setRowPosition(entry, index);
       if (list.children[position] !== entry.row)
         list.insertBefore(entry.row, list.children[position] || null);
     }
@@ -797,15 +822,7 @@ export function mountRegistryList(
       measuredRow = sample;
       if (sample) resizeObserver.observe(sample);
     }
-    if (details.active) {
-      const previewRow = [...filterHost.querySelectorAll(".qap-state-row")].find(
-        (row) => row.dataset.id === details.active.dataset.id,
-      );
-      details.returnFocus = editor?.active
-        ? previewRow?.querySelector(".qap-state-summary") ||
-          filterHost.querySelector(".qap-filter-preview-action")
-        : detailsTrigger(details.active.dataset.id, details.active.dataset.kind) || searchInput;
-    }
+    updateReturnFocus();
   }
 
   function lastRowControl(entry) {
@@ -866,7 +883,6 @@ export function mountRegistryList(
         () => {
           entry.expanded = !entry.expanded;
           updateExplanation(entry, id);
-          renderRows();
         },
         "qap-linkish qap-matching-count",
       );
@@ -914,7 +930,6 @@ export function mountRegistryList(
     const countLabel = t("filters.matching_entities", { count: ids.size });
     l10n.text(entry.explain, countLabel);
     entry.explanation.hidden = !entry.expanded || entry.explain.hidden;
-    let contentChanged = false;
     if (entry.explanation.hidden) {
       if (entry.explanation.children.length) replaceLocalizedChildren(entry.explanation);
       entry.matchingRows.clear();
@@ -947,7 +962,6 @@ export function mountRegistryList(
         }
         removeLocalizedElement(matching.row);
         entry.matchingRows.delete(entityId);
-        contentChanged = true;
       }
       let position = 0;
       for (const entityId of ids) {
@@ -960,18 +974,13 @@ export function mountRegistryList(
           matching.summary.addEventListener("keydown", entry.onTab);
           matching.attributeRows = new Map();
           entry.matchingRows.set(entityId, matching);
-          contentChanged = true;
         }
         // HA naming and locale context can change without a new entity state.
-        const { lastName, lastValue } = matching;
         updateEntityRow(matching, state);
-        if (matching.lastName !== lastName || matching.lastValue !== lastValue)
-          contentChanged = true;
         for (const [attribute, row] of matching.attributeRows) {
           if (attributes.has(attribute)) continue;
           removeLocalizedElement(row);
           matching.attributeRows.delete(attribute);
-          contentChanged = true;
         }
         for (const attribute of attributes) {
           let row = matching.attributeRows.get(attribute);
@@ -981,46 +990,17 @@ export function mountRegistryList(
             matching.name.parentElement.append(row);
           }
           const text = `${attribute}: ${JSON.stringify(state.attributes?.[attribute]) ?? "—"}`;
-          if (row.textContent !== text) {
-            row.textContent = text;
-            contentChanged = true;
-          }
+          if (row.textContent !== text) row.textContent = text;
         }
         if (entry.explanation.children[position] !== matching.row) {
           entry.explanation.insertBefore(
             matching.row,
             entry.explanation.children[position] || null,
           );
-          contentChanged = true;
         }
         position++;
       }
       focusTarget?.focus({ preventScroll: true });
-    }
-    // Newly mounted counts are measured next frame. Stable collapsed rows do
-    // no layout reads on scroll; resize and expansion invalidate this cache.
-    if (entry.explain.hidden) {
-      if (extraHeights.delete(id)) {
-        rowOffsets = null;
-        scheduleRows();
-      }
-      return;
-    }
-    if (!entry.row.isConnected) {
-      scheduleRows();
-      return;
-    }
-    const measurementKey = `${explanationLayoutGeneration}:${entry.explain.hidden}:${entry.expanded}:${String(countLabel)}`;
-    if (entry.measurementKey === measurementKey && !contentChanged) return;
-    entry.measurementKey = measurementKey;
-    const extra =
-      (entry.explain.hidden ? 0 : entry.explain.getBoundingClientRect().height) +
-      (entry.explanation.hidden ? 0 : entry.explanation.getBoundingClientRect().height);
-    if ((extraHeights.get(id) || 0) !== extra) {
-      if (extra) extraHeights.set(id, extra);
-      else extraHeights.delete(id);
-      rowOffsets = null;
-      scheduleRows();
     }
   }
 
@@ -1045,9 +1025,11 @@ export function mountRegistryList(
       registryStatus.hidden = !failed;
       l10n.text(registryStatus, failed ? t("devices.load_failed") : "");
     }
-    const anchorIndex = rowHeight ? Math.max(0, rowIndex(body.scrollTop - listOffset)) : 0;
+    // Normal-flow device rows rely on the browser's native scroll anchoring instead.
+    const measured = virtual && rowHeight > 0;
+    const anchorIndex = measured ? Math.max(0, rowIndex(body.scrollTop - listOffset)) : 0;
     const anchorId = matches[anchorIndex];
-    const anchorOffset = rowHeight ? body.scrollTop - listOffset - rowOffset(anchorIndex) : 0;
+    const anchorOffset = measured ? body.scrollTop - listOffset - rowOffset(anchorIndex) : 0;
     // HA names can change with translations or registry updates even when the
     // state object stays the same. Cache only within that naming context.
     const nextNameContext = getNameContext();
@@ -1061,6 +1043,8 @@ export function mountRegistryList(
     let membershipChanged = false;
     let visibleChanged = !incremental;
     let detailsChanged = !incremental || affectedDevices.has(detailsRowId());
+    // Records re-evaluated in this pass; null means every row needs updating.
+    const changed = incremental ? new Set() : null;
     const searchTerm = appliedSearch.trim().toLocaleLowerCase();
     const matchesFilter = (state) => {
       if (compiled) {
@@ -1079,6 +1063,7 @@ export function mountRegistryList(
       if (incremental && knownStates.get(id) === state && !affectedDevices.has(id)) continue;
       previewCache?.results.delete(id);
       knownStates.set(id, state);
+      changed?.add(id);
       const included = matchesFilter(state);
       membershipChanged ||= matchingIds.has(id) !== included;
       if (included) matchingIds.add(id);
@@ -1095,7 +1080,6 @@ export function mountRegistryList(
       detailsChanged ||= details.active?.dataset.id === id;
     }
     if (membershipChanged || (devices && visibleChanged)) {
-      rowOffsets = null;
       matches = [...matchingIds].sort((a, b) =>
         devices
           ? getDeviceName(nextStates[a]).localeCompare(getDeviceName(nextStates[b])) ||
@@ -1104,7 +1088,7 @@ export function mountRegistryList(
       );
       indexById = new Map(matches.map((id, index) => [id, index]));
     }
-    if (membershipChanged && body.scrollTop > listOffset && indexById.has(anchorId)) {
+    if (measured && membershipChanged && body.scrollTop > listOffset && indexById.has(anchorId)) {
       pendingScroll = listOffset + rowOffset(indexById.get(anchorId)) + anchorOffset;
       membershipScroll = true;
     }
@@ -1117,8 +1101,8 @@ export function mountRegistryList(
       removeLocalizedElement(emptyRow);
       emptyRow = null;
     }
-    renderRows();
-    if (!rowHeight && matches.length) {
+    renderRows(changed);
+    if (virtual && !rowHeight && matches.length) {
       measureLayout();
       renderRows();
     }

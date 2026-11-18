@@ -4602,11 +4602,22 @@ test(
             await evaluate(`document.querySelector('.qap-count').textContent`),
             "1000 devices",
           );
-          assert.ok(await evaluate(`document.querySelectorAll('.qap-state-row').length < 50`));
+          // Device rows are not windowed: all stay mounted in normal flow, and the browser
+          // skips rendering offscreen rows.
+          assert.equal(
+            await evaluate(`document.querySelectorAll('.qap-device-list > .qap-state-row').length`),
+            1000,
+          );
+          assert.equal(
+            await evaluate(
+              `getComputedStyle(document.querySelector('.qap-device-list > .qap-state-row')).contentVisibility`,
+            ),
+            "auto",
+          );
           assert.equal((await layout()).overflow, false);
           await assertMobileDialogPosition(evaluate, ".qap-states-dialog");
-          // Cross-registry explanations remain lazy and variable-height rows retain
-          // a bounded, non-overlapping virtual window on mobile and desktop.
+          // Cross-registry explanations remain lazy and variable-height rows never
+          // overlap on mobile and desktop.
           await evaluate(`(()=>{const root=document.querySelector('home-assistant');window.beforeIssueStates=root.hass.states;
         root.hass={...root.hass,entities:Object.fromEntries(Object.keys(root.hass.devices).map((id,i)=>['sensor.issue_'+i,{device_id:id}]))};
         window.publishStates(Object.fromEntries(Object.keys(root.hass.devices).map((id,i)=>['sensor.issue_'+i,{entity_id:'sensor.issue_'+i,state:'unknown',attributes:{battery:10}}])));
@@ -4716,7 +4727,7 @@ test(
           );
           assert.equal(
             await evaluate(
-              `(()=>{const rows=[...document.querySelector('.qap-state-list-virtual').children];return rows.every((row,i)=>!i||row.getBoundingClientRect().top>=rows[i-1].getBoundingClientRect().bottom-1);})()`,
+              `(()=>{const rows=[...document.querySelector('.qap-device-list').children];return rows.every((row,i)=>!i||row.getBoundingClientRect().top>=rows[i-1].getBoundingClientRect().bottom-1);})()`,
             ),
             true,
           );
@@ -4728,10 +4739,11 @@ test(
             1,
           );
           await pressTab();
+          // Scrolling away keeps the rows and their expansion state.
           await evaluate(`document.querySelector('.qap-body').scrollTop=50000`);
           await settleRows();
           assert.equal(
-            await evaluate(`document.querySelector('[data-device="device_0001"]')===null`),
+            await evaluate(`document.querySelector('[data-device="device_0001"]')!==null`),
             true,
           );
           await pressTab();
@@ -4740,21 +4752,17 @@ test(
               `document.activeElement===document.querySelector('[data-device="device_0001"] .qap-state-summary')`,
             ),
             true,
-            "Tab mounts the next row from the matching entity",
+            "Tab reaches the next row from the matching entity",
           );
           await evaluate(`document.querySelector('.qap-body').scrollTop=50000`);
           await settleRows();
-          assert.equal(
-            await evaluate(`document.querySelector('[data-device="device_0000"]')===null`),
-            true,
-          );
           await pressTab(true);
           assert.equal(
             await evaluate(
-              `document.activeElement===document.querySelector('[data-device="device_0000"] .qap-matching-count')`,
+              `document.activeElement===document.querySelector('[data-device="device_0000"] .qap-matching-entity .qap-state-summary')`,
             ),
             true,
-            "Shift+Tab mounts the previous row and focuses its last control",
+            "Shift+Tab returns to the previous row's last control",
           );
           await evaluate(`document.querySelector('.qap-body').scrollTop=1000000`);
           await settleRows();
@@ -4762,7 +4770,14 @@ test(
             await evaluate(`document.querySelector('.qap-state-row:last-child').dataset.device`),
             "device_0999",
           );
-          assert.ok(await evaluate(`document.querySelectorAll('.qap-state-row').length < 50`));
+          assert.equal(
+            await evaluate(
+              `(()=>{const body=document.querySelector('.qap-body'),last=document.querySelector('.qap-device-list > .qap-state-row:last-child').getBoundingClientRect();
+              return last.bottom<=body.getBoundingClientRect().bottom+1&&last.top>=body.getBoundingClientRect().top-1;})()`,
+            ),
+            true,
+            "The last device row is visible at the end of the list",
+          );
           await evaluate(`document.querySelector('.qap-state-tab[data-domain="all"]').click();document.querySelector('.qap-filter-action').click();
         document.querySelector('.qap-create-filter').click();
         document.querySelector('.qap-filter-rule-toggle').click();
